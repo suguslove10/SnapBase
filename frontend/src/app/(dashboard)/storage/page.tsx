@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, Star, HardDrive } from "lucide-react";
+import { Plus, Trash2, Zap, Star, HardDrive, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
@@ -70,6 +70,8 @@ export default function StoragePage() {
   const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editKeys, setEditKeys] = useState({ access_key: "", secret_key: "" });
 
   const fetchProviders = () => {
     setLoading(true);
@@ -140,6 +142,18 @@ export default function StoragePage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to delete";
       toast.error(msg);
+    }
+  };
+
+  const handleUpdateKeys = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.patch(`/storage-providers/${editId}/keys`, editKeys);
+      toast.success("Keys updated");
+      setEditId(null);
+      setEditKeys({ access_key: "", secret_key: "" });
+    } catch {
+      toast.error("Failed to update keys");
     }
   };
 
@@ -290,13 +304,17 @@ export default function StoragePage() {
                     <p className="text-[11px] text-slate-600">{p.region}</p>
                   )}
                 </div>
-                <div className="mt-4 flex gap-2">
+                <div className="mt-4 flex gap-2 flex-wrap">
                   {!p.is_default && (
                     <Button size="sm" variant="outline" onClick={() => handleSetDefault(p.id)}
                       className="border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-white text-xs h-8">
                       <Star className="mr-1 h-3 w-3" />Set Default
                     </Button>
                   )}
+                  <Button size="sm" variant="outline" onClick={() => { setEditId(p.id); setEditKeys({ access_key: "", secret_key: "" }); }}
+                    className="border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-white text-xs h-8">
+                    <KeyRound className="mr-1 h-3 w-3" />Update Keys
+                  </Button>
                   {!p.is_default && (
                     <Button size="sm" variant="ghost" onClick={() => handleDelete(p.id)}
                       className="ml-auto text-red-400/60 hover:bg-red-500/10 hover:text-red-400 h-8">
@@ -309,6 +327,29 @@ export default function StoragePage() {
           })}
         </div>
       )}
+
+      {/* Update Keys Dialog */}
+      <Dialog open={editId !== null} onOpenChange={(o) => !o && setEditId(null)}>
+        <DialogContent className="border-white/10 bg-[#1e293b] text-white max-w-sm">
+          <DialogHeader><DialogTitle>Update Keys</DialogTitle></DialogHeader>
+          <form onSubmit={handleUpdateKeys} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-slate-400 text-xs uppercase tracking-wider">Access Key</Label>
+              <Input required value={editKeys.access_key} onChange={(e) => setEditKeys({ ...editKeys, access_key: e.target.value })}
+                className="border-white/10 bg-white/5 text-white placeholder:text-slate-500" placeholder="AKIA..." />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-slate-400 text-xs uppercase tracking-wider">Secret Key</Label>
+              <Input required type="password" value={editKeys.secret_key} onChange={(e) => setEditKeys({ ...editKeys, secret_key: e.target.value })}
+                className="border-white/10 bg-white/5 text-white placeholder:text-slate-500" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setEditId(null)} className="text-slate-400">Cancel</Button>
+              <Button type="submit" className="bg-gradient-to-r from-violet-600 to-indigo-600">Save Keys</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

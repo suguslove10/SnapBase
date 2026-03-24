@@ -142,6 +142,7 @@ func main() {
 		api.POST("/storage-providers", storageProviderHandler.Create)
 		api.DELETE("/storage-providers/:id", storageProviderHandler.Delete)
 		api.PATCH("/storage-providers/:id/default", storageProviderHandler.SetDefault)
+		api.PATCH("/storage-providers/:id/keys", storageProviderHandler.UpdateKeys)
 		api.POST("/storage-providers/test", storageProviderHandler.Test)
 	}
 

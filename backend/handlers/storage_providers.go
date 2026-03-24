@@ -111,6 +111,45 @@ func (h *StorageProviderHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Storage provider created"})
 }
 
+func (h *StorageProviderHandler) UpdateKeys(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		AccessKey string `json:"access_key" binding:"required"`
+		SecretKey string `json:"secret_key" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "access_key and secret_key required"})
+		return
+	}
+
+	encrypted, err := encryptSecret(req.SecretKey, h.Cfg.JWTSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt secret"})
+		return
+	}
+
+	result, err := h.DB.Exec(
+		"UPDATE storage_providers SET access_key = $1, secret_key_encrypted = $2 WHERE id = $3 AND user_id = $4",
+		req.AccessKey, encrypted, id, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Provider not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Keys updated"})
+}
+
 func (h *StorageProviderHandler) Delete(c *gin.Context) {
 	userID := c.GetInt("user_id")
 	id, err := strconv.Atoi(c.Param("id"))
