@@ -34,6 +34,7 @@ type ProviderConfig struct {
 func NewStorageClient(p ProviderConfig) (StorageClient, error) {
 	endpoint := p.Endpoint
 	useSSL := p.UseSSL
+	bucketLookup := minio.BucketLookupAuto
 
 	switch p.ProviderType {
 	case "s3":
@@ -42,33 +43,39 @@ func NewStorageClient(p ProviderConfig) (StorageClient, error) {
 			endpoint = "s3." + p.Region + ".amazonaws.com"
 		}
 		useSSL = true
+		bucketLookup = minio.BucketLookupDNS // AWS requires virtual-hosted style
 	case "r2":
 		// Endpoint should be {accountID}.r2.cloudflarestorage.com
 		useSSL = true
+		bucketLookup = minio.BucketLookupDNS
 	case "b2":
 		if endpoint == "" {
 			endpoint = "s3.us-west-004.backblazeb2.com"
 		}
 		useSSL = true
+		bucketLookup = minio.BucketLookupDNS
 	case "spaces":
 		if p.Region != "" {
 			endpoint = p.Region + ".digitaloceanspaces.com"
 		}
 		useSSL = true
+		bucketLookup = minio.BucketLookupDNS
 	case "wasabi":
 		endpoint = "s3.wasabisys.com"
 		if p.Region != "" {
 			endpoint = "s3." + p.Region + ".wasabisys.com"
 		}
 		useSSL = true
+		bucketLookup = minio.BucketLookupDNS
 	case "minio":
 		// Use endpoint as-is from user input
 	}
 
 	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(p.AccessKey, p.SecretKey, ""),
-		Secure: useSSL,
-		Region: p.Region,
+		Creds:        credentials.NewStaticV4(p.AccessKey, p.SecretKey, ""),
+		Secure:       useSSL,
+		Region:       p.Region,
+		BucketLookup: bucketLookup,
 	})
 	if err != nil {
 		return nil, err
