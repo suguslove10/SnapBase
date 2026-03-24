@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Database, HardDrive, CalendarClock, CheckCircle, XCircle, ShieldCheck, AlertTriangle } from "lucide-react";
+import {
+  Database, HardDrive, CalendarClock, CheckCircle,
+  XCircle, ShieldCheck, AlertTriangle,
+} from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import api from "@/lib/api";
 
@@ -16,28 +19,9 @@ interface Stats {
   week_backups: number;
 }
 
-interface ChartPoint {
-  day: string;
-  success: number;
-  failed: number;
-}
-
-interface Activity {
-  id: number;
-  name: string;
-  type: string;
-  status: string;
-  size_bytes: number;
-  started_at: string;
-}
-
-interface ConnHealth {
-  id: number;
-  name: string;
-  type: string;
-  last_status: string;
-  has_anomaly: boolean;
-}
+interface ChartPoint { day: string; success: number; failed: number; }
+interface Activity { id: number; name: string; type: string; status: string; size_bytes: number; started_at: string; }
+interface ConnHealth { id: number; name: string; type: string; last_status: string; has_anomaly: boolean; }
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -60,9 +44,9 @@ function relativeTime(date: string): string {
 
 function Sparkline({ color }: { color: string }) {
   return (
-    <svg width="80" height="20" viewBox="0 0 80 20" className="mt-1.5 opacity-30">
+    <svg width="80" height="18" viewBox="0 0 80 18" className="mt-2 opacity-40">
       <polyline fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-        points="0,16 10,13 20,15 30,10 40,12 50,6 60,8 70,3 80,5" />
+        points="0,15 10,12 20,14 30,9 40,11 50,5 60,7 70,2 80,4" />
     </svg>
   );
 }
@@ -82,78 +66,105 @@ export default function DashboardPage() {
 
   const statCards = stats ? [
     {
-      label: "Total Backups", value: stats.total_backups.toString(),
+      label: "Total Backups",
+      value: stats.total_backups.toString(),
       sub: `+${stats.week_backups} this week`,
-      icon: Database, border: "border-t-indigo-500", spark: "#6366f1",
+      icon: Database,
+      color: "#00b4ff",
+      bg: "rgba(0,180,255,0.08)",
     },
     {
-      label: "Storage Used", value: formatBytes(stats.storage_used),
+      label: "Storage Used",
+      value: formatBytes(stats.storage_used),
       sub: null,
-      icon: HardDrive, border: "border-t-violet-500", spark: "#8b5cf6",
+      icon: HardDrive,
+      color: "#00f5d4",
+      bg: "rgba(0,245,212,0.08)",
     },
     {
-      label: "Active Schedules", value: stats.active_schedules.toString(),
+      label: "Active Schedules",
+      value: stats.active_schedules.toString(),
       sub: null,
-      icon: CalendarClock, border: "border-t-emerald-500", spark: "#10b981",
+      icon: CalendarClock,
+      color: "#00ff88",
+      bg: "rgba(0,255,136,0.08)",
     },
     {
-      label: "Verification Rate", value: `${stats.verification_rate.toFixed(0)}%`,
+      label: "Verification Rate",
+      value: `${stats.verification_rate.toFixed(0)}%`,
       sub: null,
-      icon: ShieldCheck, border: "border-t-cyan-500", spark: "#06b6d4",
+      icon: ShieldCheck,
+      color: "#00b4ff",
+      bg: "rgba(0,180,255,0.08)",
     },
     {
-      label: "Anomalies", value: stats.unresolved_anomalies.toString(),
+      label: "Anomalies",
+      value: stats.unresolved_anomalies.toString(),
       sub: stats.unresolved_anomalies > 0 ? "unresolved" : "all clear",
       icon: AlertTriangle,
-      border: stats.unresolved_anomalies > 0 ? "border-t-red-500" : "border-t-slate-600",
-      spark: stats.unresolved_anomalies > 0 ? "#ef4444" : "#475569",
+      color: stats.unresolved_anomalies > 0 ? "#f87171" : "#00ff88",
+      bg: stats.unresolved_anomalies > 0 ? "rgba(248,113,113,0.08)" : "rgba(0,255,136,0.08)",
     },
     {
-      label: "Last Backup", value: stats.last_backup_status,
+      label: "Last Backup",
+      value: stats.last_backup_status,
       sub: null,
       icon: stats.last_backup_status === "success" ? CheckCircle : XCircle,
-      border: stats.last_backup_status === "success" ? "border-t-emerald-500" : "border-t-red-500",
-      spark: stats.last_backup_status === "success" ? "#10b981" : "#ef4444",
+      color: stats.last_backup_status === "success" ? "#00ff88" : "#f87171",
+      bg: stats.last_backup_status === "success" ? "rgba(0,255,136,0.08)" : "rgba(248,113,113,0.08)",
     },
   ] : [];
 
+  const cardStyle = {
+    background: "rgba(13,21,38,0.8)",
+    backdropFilter: "blur(12px)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: "1rem",
+  };
+
   return (
     <div className="space-y-8">
-      <div className="relative">
-        <div className="pointer-events-none absolute -top-8 left-0 right-0 h-32 bg-gradient-to-b from-indigo-500/5 to-transparent" />
-        <h1 className="relative text-3xl font-bold text-white">Dashboard</h1>
+      {/* Header */}
+      <div>
+        <h1 className="font-grotesk text-2xl font-bold text-white">Dashboard</h1>
+        <p className="mt-1 text-sm text-slate-500">Welcome back. Here&apos;s your backup overview.</p>
       </div>
 
       {/* Stat Cards */}
       {!stats ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="rounded-xl border border-white/10 bg-[#1e293b] p-5"><Skeleton className="h-16 w-full bg-white/5" /></div>
+            <div key={i} className="rounded-2xl p-5" style={cardStyle}>
+              <Skeleton className="h-16 w-full bg-white/5" />
+            </div>
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
           {statCards.map((card) => (
-            <div key={card.label} className={`rounded-xl border border-white/10 border-t-2 ${card.border} bg-[#1e293b] p-4 transition-all hover:border-white/20`}>
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{card.label}</p>
-                <card.icon className="h-3.5 w-3.5 text-slate-600" />
+            <div
+              key={card.label}
+              className="group rounded-2xl p-4 transition-all duration-200 hover:-translate-y-0.5"
+              style={{ ...cardStyle, background: card.bg, borderColor: `${card.color}22` }}
+            >
+              <div className="flex items-start justify-between">
+                <p className="font-jetbrains text-[9px] uppercase tracking-widest text-slate-500">{card.label}</p>
+                <card.icon className="h-3.5 w-3.5 shrink-0" style={{ color: card.color, opacity: 0.6 }} />
               </div>
-              <div className="mt-1.5">
+              <div className="mt-2">
                 {card.label === "Last Backup" ? (
-                  <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${
-                    card.value === "success" ? "text-emerald-400" : card.value === "failed" ? "text-red-400" : "text-slate-400"
-                  }`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${
-                      card.value === "success" ? "bg-emerald-400" : card.value === "failed" ? "bg-red-400" : "bg-slate-400"
-                    }`} />{card.value}
+                  <span className="inline-flex items-center gap-1.5 font-grotesk text-sm font-semibold" style={{ color: card.color }}>
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: card.color }} />
+                    {card.value}
                   </span>
                 ) : (
-                  <p className="text-xl font-bold text-white">{card.value}</p>
+                  <p className="font-grotesk text-xl font-bold text-white">{card.value}</p>
                 )}
-                {card.sub && <p className="text-[10px] text-slate-500 mt-0.5">{card.sub}</p>}
+                {card.sub && (
+                  <p className="mt-0.5 font-jetbrains text-[10px]" style={{ color: card.color, opacity: 0.7 }}>{card.sub}</p>
+                )}
               </div>
-              <Sparkline color={card.spark} />
+              <Sparkline color={card.color} />
             </div>
           ))}
         </div>
@@ -162,46 +173,74 @@ export default function DashboardPage() {
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Backup Activity Chart */}
-        <div className="rounded-xl border border-white/10 bg-[#1e293b] p-5">
-          <h2 className="text-sm font-semibold text-white mb-4">Backup Activity — Last 30 Days</h2>
+        <div className="rounded-2xl p-5" style={cardStyle}>
+          <h2 className="mb-4 font-grotesk text-sm font-semibold text-white">
+            Backup Activity{" "}
+            <span className="font-jetbrains font-normal text-slate-600">— last 30 days</span>
+          </h2>
           {chartData.length === 0 ? (
-            <div className="flex h-48 items-center justify-center text-sm text-slate-500">No data yet</div>
+            <div className="flex h-48 items-center justify-center text-sm text-slate-600">No data yet</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={chartData} barGap={1}>
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#64748b" }} tickFormatter={(v) => v.slice(5)} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "12px" }}
-                  labelStyle={{ color: "#94a3b8" }}
+                <XAxis
+                  dataKey="day"
+                  tick={{ fontSize: 10, fill: "#475569", fontFamily: "var(--font-mono)" }}
+                  tickFormatter={(v) => v.slice(5)}
+                  axisLine={false}
+                  tickLine={false}
                 />
-                <Bar dataKey="success" fill="#10b981" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="failed" fill="#ef4444" radius={[2, 2, 0, 0]} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#475569", fontFamily: "var(--font-mono)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={28}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#0d1526",
+                    border: "1px solid rgba(0,180,255,0.15)",
+                    borderRadius: "10px",
+                    fontSize: "12px",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  labelStyle={{ color: "#94a3b8" }}
+                  cursor={{ fill: "rgba(0,180,255,0.04)" }}
+                />
+                <Bar dataKey="success" fill="#00ff88" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="failed" fill="#f87171" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </div>
 
         {/* Recent Activity Feed */}
-        <div className="rounded-xl border border-white/10 bg-[#1e293b] p-5">
-          <h2 className="text-sm font-semibold text-white mb-4">Recent Activity</h2>
+        <div className="rounded-2xl p-5" style={cardStyle}>
+          <h2 className="mb-4 font-grotesk text-sm font-semibold text-white">Recent Activity</h2>
           {activity.length === 0 ? (
-            <div className="flex h-48 items-center justify-center text-sm text-slate-500">No activity yet</div>
+            <div className="flex h-48 items-center justify-center text-sm text-slate-600">No activity yet</div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1">
               {activity.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-white/[0.02]">
+                <div
+                  key={a.id}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2 transition hover:bg-white/[0.03]"
+                >
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    a.status === "success" ? "bg-emerald-400" : a.status === "failed" ? "bg-red-400" : "bg-yellow-400"
+                    a.status === "success" ? "bg-[#00ff88]" :
+                    a.status === "failed" ? "bg-red-400" : "bg-yellow-400 animate-pulse"
                   }`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-white truncate">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs text-white">
                       <span className="font-medium">{a.name}</span>
-                      <span className="text-slate-500"> backed up</span>
-                      {a.size_bytes > 0 && <span className="text-slate-500"> — {formatBytes(a.size_bytes)}</span>}
+                      <span className="text-slate-500"> · {a.type}</span>
+                      {a.size_bytes > 0 && (
+                        <span className="font-jetbrains text-slate-600"> {formatBytes(a.size_bytes)}</span>
+                      )}
                     </p>
                   </div>
-                  <span className="text-[10px] text-slate-600 shrink-0">{relativeTime(a.started_at)}</span>
+                  <span className="font-jetbrains text-[10px] text-slate-600 shrink-0">{relativeTime(a.started_at)}</span>
                 </div>
               ))}
             </div>
@@ -209,23 +248,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Connections Health Grid */}
-      <div className="rounded-xl border border-white/10 bg-[#1e293b] p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Connections Health</h2>
+      {/* Connections Health */}
+      <div className="rounded-2xl p-5" style={cardStyle}>
+        <h2 className="mb-4 font-grotesk text-sm font-semibold text-white">Connections Health</h2>
         {health.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-500">No connections</div>
+          <div className="py-8 text-center text-sm text-slate-600">No connections yet</div>
         ) : (
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2.5">
             {health.map((h) => (
-              <div key={h.id} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2" title={`${h.name} (${h.type}) — ${h.last_status}`}>
-                <span className={`h-2.5 w-2.5 rounded-full ${
+              <div
+                key={h.id}
+                title={`${h.name} (${h.type}) — ${h.last_status}`}
+                className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2 transition hover:border-white/10"
+              >
+                <span className={`h-2 w-2 rounded-full ${
                   h.has_anomaly ? "bg-yellow-400 animate-pulse" :
-                  h.last_status === "success" ? "bg-emerald-400" :
-                  h.last_status === "failed" ? "bg-red-400" :
-                  "bg-slate-500"
+                  h.last_status === "success" ? "bg-[#00ff88]" :
+                  h.last_status === "failed" ? "bg-red-400" : "bg-slate-500"
                 }`} />
-                <span className="text-xs text-slate-300">{h.name}</span>
-                <span className="text-[10px] text-slate-600">{h.type}</span>
+                <span className="font-grotesk text-xs font-medium text-slate-300">{h.name}</span>
+                <span className="font-jetbrains text-[10px] text-slate-600">{h.type}</span>
               </div>
             ))}
           </div>

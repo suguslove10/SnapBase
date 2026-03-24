@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, Zap } from "lucide-react";
 
 const tiers = [
   {
     name: "Free",
     monthly: 0,
     annual: 0,
+    annualTotal: 0,
     description: "For side projects and personal use",
     features: [
       "2 database connections",
@@ -18,12 +19,14 @@ const tiers = [
       "Community support",
     ],
     cta: "Get Started",
+    href: "/login",
     highlighted: false,
   },
   {
     name: "Pro",
     monthly: 12,
     annual: 10,
+    annualTotal: 120,
     description: "For growing teams and production databases",
     features: [
       "Unlimited database connections",
@@ -35,12 +38,14 @@ const tiers = [
       "Priority support",
     ],
     cta: "Start Free Trial",
+    href: "/login",
     highlighted: true,
   },
   {
     name: "Team",
     monthly: 29,
     annual: 23,
+    annualTotal: 276,
     description: "For organizations with compliance needs",
     features: [
       "Everything in Pro",
@@ -51,6 +56,7 @@ const tiers = [
       "SLA guarantee",
     ],
     cta: "Contact Sales",
+    href: "/login",
     highlighted: false,
   },
 ];
@@ -74,7 +80,7 @@ const faqs = [
   },
   {
     q: "Where are backups stored?",
-    a: "Backups are stored in S3-compatible object storage (MinIO by default). You can configure your own S3 bucket for full control over your data.",
+    a: "Backups are stored in S3-compatible object storage (MinIO by default). You can configure your own AWS S3, Cloudflare R2, or Backblaze B2 bucket.",
   },
 ];
 
@@ -82,21 +88,44 @@ export default function PricingPage() {
   const [annual, setAnnual] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white">
+    <div className="min-h-screen text-white" style={{ background: "#0a0f1e" }}>
+      {/* Background grid */}
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: `linear-gradient(rgba(0,180,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,180,255,0.5) 1px, transparent 1px)`,
+          backgroundSize: "60px 60px",
+        }}
+      />
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,180,255,0.10) 0%, transparent 70%)",
+        }}
+      />
+
       {/* Navbar */}
-      <nav className="border-b border-white/[0.06]">
+      <nav
+        className="relative z-10 border-b border-white/[0.06]"
+        style={{ backdropFilter: "blur(12px)", background: "rgba(10,15,30,0.8)" }}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center bg-indigo-500 text-[11px] font-black tracking-tight text-white">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-black text-[#0a0f1e]"
+              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+            >
               SB
             </div>
-            <span className="text-[15px] font-light tracking-wide text-slate-200">SnapBase</span>
+            <span className="font-grotesk text-base font-semibold text-white">SnapBase</span>
           </Link>
           <div className="flex items-center gap-6">
-            <Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition">Pricing</Link>
+            <Link href="/pricing" className="text-sm text-[#00b4ff]">Pricing</Link>
+            <Link href="/security" className="text-sm text-slate-400 transition hover:text-white">Security</Link>
             <Link
               href="/login"
-              className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-medium transition hover:from-indigo-500 hover:to-violet-500"
+              className="rounded-lg px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
             >
               Sign In
             </Link>
@@ -105,10 +134,17 @@ export default function PricingPage() {
       </nav>
 
       {/* Header */}
-      <section className="mx-auto max-w-4xl px-6 pt-20 text-center">
-        <h1 className="text-4xl font-bold md:text-5xl">
+      <section className="relative z-10 mx-auto max-w-3xl px-6 pt-20 text-center">
+        <h1 className="font-grotesk text-4xl font-bold md:text-5xl">
           Simple, transparent{" "}
-          <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">
+          <span
+            style={{
+              background: "linear-gradient(135deg, #00b4ff, #00f5d4)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}
+          >
             pricing
           </span>
         </h1>
@@ -118,63 +154,101 @@ export default function PricingPage() {
 
         {/* Annual toggle */}
         <div className="mt-8 flex items-center justify-center gap-3">
-          <span className={`text-sm ${!annual ? "text-white" : "text-slate-500"}`}>Monthly</span>
+          <span className={`text-sm font-medium transition-colors ${!annual ? "text-white" : "text-slate-500"}`}>
+            Monthly
+          </span>
           <button
-            onClick={() => setAnnual(!annual)}
-            className={`relative h-6 w-11 rounded-full transition-colors ${annual ? "bg-indigo-600" : "bg-white/10"}`}
+            onClick={() => setAnnual((v) => !v)}
+            aria-label="Toggle annual billing"
+            className="relative h-7 w-12 rounded-full border border-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-[#00b4ff]/50"
+            style={{ background: annual ? "linear-gradient(135deg, #00b4ff, #00f5d4)" : "rgba(255,255,255,0.08)" }}
           >
             <span
-              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${annual ? "translate-x-5" : ""}`}
+              className="absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ left: annual ? "calc(100% - 1.5rem)" : "0.25rem" }}
             />
           </button>
-          <span className={`text-sm ${annual ? "text-white" : "text-slate-500"}`}>
-            Annual <span className="text-emerald-400 text-xs font-medium ml-1">Save 20%</span>
+          <span className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${annual ? "text-white" : "text-slate-500"}`}>
+            Annual
+            <span className="rounded-full bg-[#00ff88]/10 px-2 py-0.5 font-jetbrains text-[10px] font-semibold text-[#00ff88]">
+              Save 20%
+            </span>
           </span>
         </div>
       </section>
 
       {/* Pricing cards */}
-      <section className="mx-auto max-w-5xl px-6 py-16">
+      <section className="relative z-10 mx-auto max-w-5xl px-6 py-16">
         <div className="grid gap-6 md:grid-cols-3">
           {tiers.map((tier) => {
             const price = annual ? tier.annual : tier.monthly;
             return (
               <div
                 key={tier.name}
-                className={`relative rounded-xl p-[1px] transition-all hover:scale-[1.02] ${
+                className={`relative rounded-2xl transition-all duration-200 hover:-translate-y-1 ${
                   tier.highlighted
-                    ? "bg-gradient-to-b from-indigo-500 to-violet-500"
-                    : "bg-white/10"
+                    ? "shadow-[0_0_40px_rgba(0,180,255,0.15)]"
+                    : ""
                 }`}
+                style={
+                  tier.highlighted
+                    ? { padding: "1px", background: "linear-gradient(135deg, #00b4ff, #00f5d4)", borderRadius: "1rem" }
+                    : { border: "1px solid rgba(255,255,255,0.08)", borderRadius: "1rem" }
+                }
               >
-                <div className="relative h-full rounded-[11px] bg-[#131c2e] p-6">
+                <div
+                  className="relative h-full rounded-[calc(1rem-1px)] p-6"
+                  style={{ background: "#0d1526" }}
+                >
                   {tier.highlighted && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <span className="rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1 text-[11px] font-semibold">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                      <span
+                        className="rounded-full px-3 py-1 font-grotesk text-[11px] font-semibold text-[#0a0f1e]"
+                        style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+                      >
                         Most Popular
                       </span>
                     </div>
                   )}
-                  <h3 className="text-lg font-semibold">{tier.name}</h3>
+
+                  <h3 className="font-grotesk text-lg font-bold text-white">{tier.name}</h3>
                   <p className="mt-1 text-xs text-slate-500">{tier.description}</p>
+
                   <div className="mt-5">
-                    <span className="text-4xl font-bold">${price}</span>
-                    {price > 0 && <span className="text-sm text-slate-500">/month</span>}
+                    <div className="flex items-end gap-1">
+                      <span className="font-grotesk text-4xl font-bold text-white">${price}</span>
+                      {price > 0 && (
+                        <span className="mb-1 text-sm text-slate-500">/mo</span>
+                      )}
+                    </div>
+                    {annual && tier.annualTotal > 0 && (
+                      <p className="mt-1 font-jetbrains text-xs text-slate-500">
+                        ${tier.annualTotal} billed annually
+                      </p>
+                    )}
+                    {!annual && tier.monthly > 0 && (
+                      <p className="mt-1 font-jetbrains text-xs text-slate-600">
+                        or ${tier.annual}/mo billed annually
+                      </p>
+                    )}
                   </div>
+
                   <Link
-                    href="/login"
-                    className={`mt-6 block rounded-lg py-2.5 text-center text-sm font-medium transition ${
+                    href={tier.href}
+                    className={`mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold transition ${
                       tier.highlighted
-                        ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500"
-                        : "border border-white/10 text-slate-300 hover:bg-white/5"
+                        ? "text-[#0a0f1e] hover:opacity-90"
+                        : "border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white"
                     }`}
+                    style={tier.highlighted ? { background: "linear-gradient(135deg, #00b4ff, #00f5d4)" } : {}}
                   >
                     {tier.cta}
                   </Link>
+
                   <ul className="mt-6 space-y-3">
                     {tier.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-sm text-slate-400">
-                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                      <li key={f} className="flex items-start gap-2.5 text-sm text-slate-400">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#00b4ff]" />
                         {f}
                       </li>
                     ))}
@@ -187,23 +261,48 @@ export default function PricingPage() {
       </section>
 
       {/* FAQ */}
-      <section className="mx-auto max-w-3xl px-6 pb-20">
-        <h2 className="mb-8 text-center text-2xl font-bold">Frequently Asked Questions</h2>
-        <div className="space-y-4">
+      <section className="relative z-10 mx-auto max-w-3xl px-6 pb-20">
+        <h2 className="mb-8 text-center font-grotesk text-2xl font-bold text-white">
+          Frequently Asked Questions
+        </h2>
+        <div className="space-y-3">
           {faqs.map((faq) => (
-            <div key={faq.q} className="rounded-xl border border-white/10 bg-[#1e293b] p-5">
-              <h3 className="text-sm font-semibold text-white">{faq.q}</h3>
-              <p className="mt-2 text-sm text-slate-400 leading-relaxed">{faq.a}</p>
+            <div
+              key={faq.q}
+              className="rounded-2xl border border-white/[0.07] p-5 transition hover:border-[#00b4ff]/20"
+              style={{ background: "rgba(13,21,38,0.8)" }}
+            >
+              <h3 className="font-grotesk text-sm font-semibold text-white">{faq.q}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">{faq.a}</p>
             </div>
           ))}
         </div>
       </section>
 
+      {/* CTA */}
+      <section className="relative z-10 mx-auto max-w-2xl px-6 pb-20 text-center">
+        <div
+          className="rounded-2xl border border-[#00b4ff]/20 p-10"
+          style={{ background: "rgba(0,180,255,0.04)" }}
+        >
+          <Zap className="mx-auto mb-3 h-7 w-7 text-[#00b4ff]" />
+          <h2 className="font-grotesk text-2xl font-bold text-white">Ready to get started?</h2>
+          <p className="mt-2 text-sm text-slate-400">Free plan, no credit card required.</p>
+          <Link
+            href="/login"
+            className="mt-6 inline-block rounded-xl px-8 py-3 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
+            style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+          >
+            Start for Free
+          </Link>
+        </div>
+      </section>
+
       {/* Footer */}
-      <footer className="border-t border-white/[0.06] py-8 text-center text-sm text-slate-500">
-        Built by Sugu &middot;{" "}
-        <a href="https://github.com/suguslove10" className="text-indigo-400 hover:underline" target="_blank" rel="noopener noreferrer">
-          github.com/suguslove10
+      <footer className="relative z-10 border-t border-white/[0.06] py-8 text-center text-sm text-slate-600">
+        Built by{" "}
+        <a href="https://thesugu.com" className="text-[#00b4ff] hover:underline" target="_blank" rel="noopener noreferrer">
+          Sugu
         </a>
       </footer>
     </div>

@@ -18,9 +18,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex min-h-screen bg-[#0f172a]">
+    <div className="flex min-h-screen" style={{ background: "#0a0f1e" }}>
+      {/* Subtle grid overlay */}
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.025]"
+        style={{
+          backgroundImage: `linear-gradient(rgba(0,180,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,180,255,0.5) 1px, transparent 1px)`,
+          backgroundSize: "60px 60px",
+        }}
+      />
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">{children}</main>
+      <main className="relative z-10 ml-56 flex-1 p-8">{children}</main>
     </div>
   );
 }
