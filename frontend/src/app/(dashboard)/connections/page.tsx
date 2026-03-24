@@ -124,6 +124,10 @@ export default function ConnectionsPage() {
             </DialogTrigger>
             <DialogContent className="border-white/10 bg-[#1e293b] text-white max-w-lg">
               <DialogHeader><DialogTitle>Add Connection</DialogTitle></DialogHeader>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                Allow this IP in your database firewall/whitelist:{" "}
+                <span className="font-mono font-bold select-all">161.118.183.218</span>
+              </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
