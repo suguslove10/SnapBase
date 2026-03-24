@@ -46,7 +46,7 @@ func main() {
 	emailCfg := notifications.LoadEmailConfig()
 
 	// Initialize verifier
-	verifier := &backup.Verifier{DB: db, Storage: store}
+	verifier := &backup.Verifier{DB: db, Storage: store, Cfg: cfg}
 
 	// Initialize anomaly detector
 	anomalyDetector := &backup.AnomalyDetector{DB: db}

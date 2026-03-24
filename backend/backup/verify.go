@@ -13,12 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/suguslove10/snapbase/config"
 	"github.com/suguslove10/snapbase/storage"
 )
 
 type Verifier struct {
 	DB      *sql.DB
 	Storage storage.StorageClient
+	Cfg     *config.Config
 }
 
 type VerificationResult struct {
@@ -31,20 +33,26 @@ func (v *Verifier) VerifyBackup(backupID int) {
 
 	// Get backup info
 	var storagePath, dbType, host, username, passwordEnc, dbName string
-	var port int
+	var port, connID, userID int
 	err := v.DB.QueryRow(`
-		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name
+		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name, dc.id, dc.user_id
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE b.id = $1 AND b.status = 'success'
-	`, backupID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName)
+	`, backupID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &connID, &userID)
 	if err != nil {
 		v.markFailed(backupID, "Backup not found or not successful")
 		return
 	}
 
+	// Resolve the correct storage for this connection (S3, R2, etc.)
+	store, err := resolveStorage(v.DB, v.Cfg, connID, userID)
+	if err != nil || store == nil {
+		store = v.Storage // fall back to system default
+	}
+
 	// Download backup
-	obj, err := v.Storage.GetObject(storagePath)
+	obj, err := store.GetObject(storagePath)
 	if err != nil {
 		v.markFailed(backupID, fmt.Sprintf("Failed to download backup: %v", err))
 		return
