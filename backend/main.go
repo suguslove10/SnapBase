@@ -1,0 +1,152 @@
+package main
+
+import (
+	"log"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+
+	"github.com/suguslove10/snapbase/audit"
+	"github.com/suguslove10/snapbase/backup"
+	"github.com/suguslove10/snapbase/config"
+	"github.com/suguslove10/snapbase/crypto"
+	"github.com/suguslove10/snapbase/handlers"
+	"github.com/suguslove10/snapbase/models"
+	"github.com/suguslove10/snapbase/notifications"
+	"github.com/suguslove10/snapbase/retention"
+	"github.com/suguslove10/snapbase/scheduler"
+	"github.com/suguslove10/snapbase/storage"
+)
+
+func main() {
+	cfg := config.Load()
+
+	// Initialize AES-256 encryption — hard fail if key is missing or wrong length
+	encKey := []byte(cfg.EncryptionKey)
+	if len(encKey) != 32 {
+		log.Fatalf("ENCRYPTION_KEY must be exactly 32 bytes (got %d). "+
+			"Generate one with: openssl rand -hex 16 | tr -d '\\n'", len(encKey))
+	}
+	if err := crypto.Init(encKey); err != nil {
+		log.Fatalf("Failed to initialise encryption: %v", err)
+	}
+	log.Println("AES-256-GCM encryption initialised")
+
+	// Initialize database
+	db := models.InitDB(cfg)
+	defer db.Close()
+
+	// Initialize MinIO storage (system default)
+	store := storage.NewMinioStorage(cfg)
+
+	// Seed default storage provider
+	models.SeedDefaultStorageProvider(db, cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioBucket, cfg.MinioUseSSL)
+
+	// Initialize email notifications
+	emailCfg := notifications.LoadEmailConfig()
+
+	// Initialize verifier
+	verifier := &backup.Verifier{DB: db, Storage: store}
+
+	// Initialize anomaly detector
+	anomalyDetector := &backup.AnomalyDetector{DB: db}
+
+	// Initialize backup runner
+	runner := &backup.Runner{DB: db, Cfg: cfg, Storage: store, EmailConfig: emailCfg, Verifier: verifier, AnomalyDetector: anomalyDetector}
+
+	// Initialize retention cleaner
+	cleaner := &retention.Cleaner{DB: db, Storage: store}
+
+	// Initialize scheduler
+	sched := scheduler.New(db, runner)
+	sched.Start()
+	sched.AddRetentionJob(cleaner)
+	defer sched.Stop()
+
+	// Setup handlers
+	auditLogger := &audit.Logger{DB: db}
+	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger}
+	connHandler := &handlers.ConnectionHandler{DB: db}
+	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store}
+	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Runner: runner, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
+	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched}
+	settingsHandler := &handlers.SettingsHandler{DB: db, Cfg: cfg, Storage: store}
+	anomalyHandler := &handlers.AnomalyHandler{DB: db}
+	auditHandler := &handlers.AuditHandler{DB: db}
+	reportHandler := &handlers.ReportHandler{DB: db, Cfg: cfg}
+	storageProviderHandler := &handlers.StorageProviderHandler{DB: db, Cfg: cfg}
+
+	// Setup router
+	r := gin.Default()
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:3001", "http://localhost:5173", cfg.FrontendURL},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowCredentials: true,
+	}))
+
+	oauthHandler := &handlers.OAuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger}
+
+	// Public routes
+	r.POST("/api/auth/register", authHandler.Register)
+	r.POST("/api/auth/login", authHandler.Login)
+	r.GET("/api/auth/providers", oauthHandler.Providers)
+	r.GET("/api/auth/google", oauthHandler.GoogleLogin)
+	r.POST("/api/auth/google/callback", oauthHandler.GoogleCallback)
+	r.GET("/api/auth/github", oauthHandler.GitHubLogin)
+	r.POST("/api/auth/github/callback", oauthHandler.GitHubCallback)
+
+	// Protected routes
+	api := r.Group("/api")
+	api.Use(handlers.AuthMiddleware(cfg))
+	{
+		api.GET("/auth/me", authHandler.Me)
+
+		api.GET("/connections", connHandler.List)
+		api.POST("/connections", connHandler.Create)
+		api.DELETE("/connections/:id", connHandler.Delete)
+		api.PATCH("/connections/:id/retention", connHandler.UpdateRetention)
+		api.POST("/connections/:id/test", connHandler.TestConnection)
+		api.PATCH("/connections/:id/storage", connHandler.UpdateStorageProvider)
+
+		api.GET("/backups", backupHandler.List)
+		api.POST("/backups/trigger/:id", backupHandler.Trigger)
+		api.GET("/backups/:id/download", backupHandler.Download)
+		api.POST("/backups/:id/restore", backupHandler.Restore)
+		api.GET("/backups/stats", backupHandler.Stats)
+		api.GET("/backups/chart", backupHandler.ChartData)
+		api.GET("/backups/activity", backupHandler.ActivityFeed)
+		api.GET("/connections/health", connHandler.Health)
+
+		api.GET("/schedules", schedHandler.List)
+		api.POST("/schedules", schedHandler.Create)
+		api.PATCH("/schedules/:id", schedHandler.Update)
+		api.DELETE("/schedules/:id", schedHandler.Delete)
+
+		api.GET("/audit", auditHandler.List)
+		api.POST("/reports/compliance", reportHandler.GenerateCompliance)
+
+		api.GET("/anomalies", anomalyHandler.List)
+		api.PATCH("/anomalies/:id/resolve", anomalyHandler.Resolve)
+		api.GET("/anomalies/stats", anomalyHandler.Stats)
+
+		api.PATCH("/auth/password", settingsHandler.ChangePassword)
+		api.GET("/settings/notifications", settingsHandler.GetNotificationSettings)
+		api.PATCH("/settings/notifications", settingsHandler.UpdateNotificationSettings)
+		api.POST("/settings/notifications/test", settingsHandler.TestNotification)
+		api.POST("/settings/slack/test", settingsHandler.TestSlack)
+		api.GET("/settings/storage", settingsHandler.GetStorageInfo)
+
+		api.GET("/storage-providers", storageProviderHandler.List)
+		api.POST("/storage-providers", storageProviderHandler.Create)
+		api.DELETE("/storage-providers/:id", storageProviderHandler.Delete)
+		api.PATCH("/storage-providers/:id/default", storageProviderHandler.SetDefault)
+		api.POST("/storage-providers/test", storageProviderHandler.Test)
+	}
+
+	log.Printf("Server starting on port %s", cfg.ServerPort)
+	if err := r.Run(":" + cfg.ServerPort); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}

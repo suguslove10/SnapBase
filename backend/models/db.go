@@ -1,0 +1,192 @@
+package models
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+
+	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/suguslove10/snapbase/config"
+)
+
+func InitDB(cfg *config.Config) *sql.DB {
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+
+	createTables(db)
+	seedAdmin(db)
+
+	return db
+}
+
+func createTables(db *sql.DB) {
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id SERIAL PRIMARY KEY,
+			email VARCHAR(255) UNIQUE NOT NULL,
+			password_hash VARCHAR(255) NOT NULL,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS db_connections (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id),
+			name VARCHAR(255) NOT NULL,
+			type VARCHAR(50) NOT NULL,
+			host VARCHAR(255),
+			port INTEGER,
+			database_name VARCHAR(255) NOT NULL,
+			username VARCHAR(255),
+			password_encrypted VARCHAR(255),
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS backup_jobs (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			schedule_id INTEGER,
+			status VARCHAR(50) DEFAULT 'pending',
+			size_bytes BIGINT,
+			storage_path VARCHAR(500),
+			error_message TEXT,
+			started_at TIMESTAMP,
+			completed_at TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS schedules (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			cron_expression VARCHAR(100) NOT NULL,
+			enabled BOOLEAN DEFAULT true,
+			last_run TIMESTAMP,
+			next_run TIMESTAMP,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+	}
+
+	for _, q := range queries {
+		if _, err := db.Exec(q); err != nil {
+			log.Fatalf("Failed to create table: %v", err)
+		}
+	}
+
+	// Migrations
+	migrations := []string{
+		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS retention_days INTEGER DEFAULT 30`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS restore_status VARCHAR(50)`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS restored_at TIMESTAMP`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS verified BOOLEAN`,
+		`CREATE TABLE IF NOT EXISTS audit_logs (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id),
+			action VARCHAR(100) NOT NULL,
+			resource VARCHAR(100),
+			resource_id INTEGER,
+			metadata JSONB DEFAULT '{}',
+			ip_address VARCHAR(50),
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS anomalies (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			backup_job_id INTEGER REFERENCES backup_jobs(id) ON DELETE SET NULL,
+			type VARCHAR(100) NOT NULL,
+			message TEXT NOT NULL,
+			severity VARCHAR(20) NOT NULL DEFAULT 'warning',
+			resolved BOOLEAN DEFAULT false,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS verification_details TEXT`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS verification_error TEXT`,
+		`CREATE TABLE IF NOT EXISTS storage_providers (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id),
+			name VARCHAR(255) NOT NULL,
+			provider_type VARCHAR(50) NOT NULL,
+			endpoint VARCHAR(500),
+			access_key VARCHAR(255),
+			secret_key_encrypted VARCHAR(500),
+			bucket VARCHAR(255) NOT NULL,
+			region VARCHAR(100),
+			use_ssl BOOLEAN DEFAULT true,
+			is_default BOOLEAN DEFAULT false,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS storage_provider_id INTEGER`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'local'`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id VARCHAR(255)`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)`,
+		`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id),
+			key VARCHAR(100) NOT NULL,
+			value TEXT NOT NULL DEFAULT '',
+			updated_at TIMESTAMP DEFAULT NOW(),
+			UNIQUE(user_id, key)
+		)`,
+	}
+	for _, m := range migrations {
+		db.Exec(m)
+	}
+}
+
+func seedAdmin(db *sql.DB) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM users WHERE email = $1", "admin@snapbase.local").Scan(&count)
+	if err != nil {
+		log.Printf("Error checking admin user: %v", err)
+		return
+	}
+	if count > 0 {
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("Error hashing password: %v", err)
+		return
+	}
+
+	_, err = db.Exec("INSERT INTO users (email, password_hash) VALUES ($1, $2)", "admin@snapbase.local", string(hash))
+	if err != nil {
+		log.Printf("Error creating admin user: %v", err)
+		return
+	}
+	log.Println("Created default admin user: admin@snapbase.local / admin123")
+}
+
+func SeedDefaultStorageProvider(db *sql.DB, endpoint, accessKey, secretKeyEnc, bucket string, useSSL bool) {
+	// Get admin user ID
+	var userID int
+	err := db.QueryRow("SELECT id FROM users WHERE email = $1", "admin@snapbase.local").Scan(&userID)
+	if err != nil {
+		return
+	}
+
+	var spCount int
+	db.QueryRow("SELECT COUNT(*) FROM storage_providers WHERE user_id = $1 AND is_default = true", userID).Scan(&spCount)
+	if spCount > 0 {
+		return
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO storage_providers (user_id, name, provider_type, endpoint, access_key, secret_key_encrypted, bucket, use_ssl, is_default)
+		VALUES ($1, 'Local MinIO (Default)', 'minio', $2, $3, $4, $5, $6, true)
+	`, userID, endpoint, accessKey, secretKeyEnc, bucket, useSSL)
+	if err != nil {
+		log.Printf("Error seeding default storage provider: %v", err)
+		return
+	}
+	log.Println("Created default storage provider: Local MinIO (Default)")
+}

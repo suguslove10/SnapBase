@@ -1,0 +1,268 @@
+package handlers
+
+import (
+	"database/sql"
+	"fmt"
+	"net"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/suguslove10/snapbase/crypto"
+	"github.com/suguslove10/snapbase/models"
+)
+
+type ConnectionHandler struct {
+	DB *sql.DB
+}
+
+func (h *ConnectionHandler) List(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	rows, err := h.DB.Query(
+		"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
+		userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch connections"})
+		return
+	}
+	defer rows.Close()
+
+	var connections []models.DBConnection
+	for rows.Next() {
+		var conn models.DBConnection
+		var spID sql.NullInt64
+		if err := rows.Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.RetentionDays, &spID, &conn.CreatedAt); err != nil {
+			continue
+		}
+		if spID.Valid {
+			id := int(spID.Int64)
+			conn.StorageProviderID = &id
+		}
+		connections = append(connections, conn)
+	}
+	if connections == nil {
+		connections = []models.DBConnection{}
+	}
+	c.JSON(http.StatusOK, connections)
+}
+
+func (h *ConnectionHandler) Create(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	var req models.CreateConnectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	validTypes := map[string]bool{"postgres": true, "mysql": true, "mongodb": true, "sqlite": true}
+	if !validTypes[req.Type] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid type. Must be: postgres, mysql, mongodb, or sqlite"})
+		return
+	}
+
+	retentionDays := req.RetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+
+	// SECURITY: credentials never returned to frontend — store encrypted
+	encPassword, err := crypto.Encrypt(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt credentials"})
+		return
+	}
+
+	var id int
+	err = h.DB.QueryRow(
+		"INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+		userID, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID,
+	).Scan(&id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create connection"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Connection created"})
+}
+
+func (h *ConnectionHandler) Delete(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	result, err := h.DB.Exec("DELETE FROM db_connections WHERE id = $1 AND user_id = $2", id, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete connection"})
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Connection deleted"})
+}
+
+func (h *ConnectionHandler) TestConnection(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var conn models.DBConnection
+	err = h.DB.QueryRow(
+		"SELECT id, type, host, port, database_name, username, password_encrypted FROM db_connections WHERE id = $1 AND user_id = $2",
+		id, userID,
+	).Scan(&conn.ID, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	var testErr error
+	switch conn.Type {
+	case "postgres":
+		dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable connect_timeout=5",
+			conn.Host, conn.Port, conn.Username, conn.PasswordEncrypted, conn.Database)
+		testDB, err := sql.Open("postgres", dsn)
+		if err != nil {
+			testErr = err
+		} else {
+			defer testDB.Close()
+			testErr = testDB.Ping()
+		}
+	case "sqlite":
+		// For SQLite, just check the file path is not empty
+		if conn.Database == "" {
+			testErr = fmt.Errorf("database file path is required")
+		}
+	default:
+		// For MySQL and MongoDB, do a basic TCP dial
+		addr := fmt.Sprintf("%s:%d", conn.Host, conn.Port)
+		connTest, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		if err != nil {
+			testErr = err
+		} else {
+			connTest.Close()
+		}
+	}
+
+	if testErr != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": testErr.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Connection successful"})
+}
+
+func (h *ConnectionHandler) UpdateRetention(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		RetentionDays int `json:"retention_days"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	if req.RetentionDays < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "retention_days must be >= 0 (0 = forever)"})
+		return
+	}
+
+	result, err := h.DB.Exec("UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND user_id = $3", req.RetentionDays, id, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update retention"})
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Retention updated"})
+}
+
+func (h *ConnectionHandler) UpdateStorageProvider(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		StorageProviderID *int `json:"storage_provider_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	result, err := h.DB.Exec("UPDATE db_connections SET storage_provider_id = $1 WHERE id = $2 AND user_id = $3", req.StorageProviderID, id, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Storage provider updated"})
+}
+
+func (h *ConnectionHandler) Health(c *gin.Context) {
+	userID := c.GetInt("user_id")
+
+	rows, err := h.DB.Query(`
+		SELECT dc.id, dc.name, dc.type,
+			COALESCE((
+				SELECT b.status FROM backup_jobs b
+				WHERE b.connection_id = dc.id
+				ORDER BY b.started_at DESC NULLS LAST LIMIT 1
+			), 'none') as last_status,
+			EXISTS(
+				SELECT 1 FROM anomalies a
+				WHERE a.connection_id = dc.id AND a.resolved = false
+			) as has_anomaly
+		FROM db_connections dc
+		WHERE dc.user_id = $1
+	`, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, []interface{}{})
+		return
+	}
+	defer rows.Close()
+
+	type ConnHealth struct {
+		ID         int    `json:"id"`
+		Name       string `json:"name"`
+		Type       string `json:"type"`
+		LastStatus string `json:"last_status"`
+		HasAnomaly bool   `json:"has_anomaly"`
+	}
+	var health []ConnHealth
+	for rows.Next() {
+		var ch ConnHealth
+		rows.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.LastStatus, &ch.HasAnomaly)
+		health = append(health, ch)
+	}
+	if health == nil {
+		health = []ConnHealth{}
+	}
+	c.JSON(http.StatusOK, health)
+}
