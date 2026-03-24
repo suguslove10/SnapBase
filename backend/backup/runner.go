@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/suguslove10/snapbase/config"
@@ -179,8 +180,15 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		)
 
 	case "mongodb":
-		uri := fmt.Sprintf("mongodb://%s:%s@%s:%d/%s",
-			conn.Username, conn.PasswordEncrypted, conn.Host, conn.Port, conn.Database)
+		var uri string
+		// MongoDB Atlas uses SRV records (.mongodb.net) — must use mongodb+srv:// without port
+		if strings.Contains(conn.Host, ".mongodb.net") {
+			uri = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=admin",
+				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Database)
+		} else {
+			uri = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s",
+				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Port, conn.Database)
+		}
 		cmd = exec.Command("mongodump",
 			"--uri", uri,
 			"--archive",

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/suguslove10/snapbase/crypto"
@@ -136,9 +137,14 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	case "mongodb":
 		send("log", fmt.Sprintf("Restoring MongoDB database %s...", dbName))
+		var mongoURI string
+		if strings.Contains(host, ".mongodb.net") {
+			mongoURI = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=admin", username, passwordEnc, host, dbName)
+		} else {
+			mongoURI = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s", username, passwordEnc, host, port, dbName)
+		}
 		cmd = exec.Command("mongorestore",
-			"--host", host,
-			"--port", fmt.Sprintf("%d", port),
+			"--uri", mongoURI,
 			"--db", dbName,
 			"--drop",
 			"--archive="+tmpGz,

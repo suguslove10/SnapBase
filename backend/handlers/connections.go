@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -145,13 +146,28 @@ func (h *ConnectionHandler) TestConnection(c *gin.Context) {
 			testErr = fmt.Errorf("database file path is required")
 		}
 	default:
-		// For MySQL and MongoDB, do a basic TCP dial
-		addr := fmt.Sprintf("%s:%d", conn.Host, conn.Port)
-		connTest, err := net.DialTimeout("tcp", addr, 5*time.Second)
-		if err != nil {
-			testErr = err
+		// MongoDB Atlas uses SRV records — resolve actual shard hosts via SRV lookup
+		if conn.Type == "mongodb" && strings.Contains(conn.Host, ".mongodb.net") {
+			_, addrs, err := net.LookupSRV("mongodb", "tcp", conn.Host)
+			if err != nil || len(addrs) == 0 {
+				testErr = fmt.Errorf("cannot resolve MongoDB Atlas host (check hostname is correct)")
+			} else {
+				addr := fmt.Sprintf("%s:%d", strings.TrimSuffix(addrs[0].Target, "."), addrs[0].Port)
+				connTest, err := net.DialTimeout("tcp", addr, 5*time.Second)
+				if err != nil {
+					testErr = fmt.Errorf("cannot reach MongoDB Atlas (check IP whitelist: 161.118.183.218): %v", err)
+				} else {
+					connTest.Close()
+				}
+			}
 		} else {
-			connTest.Close()
+			addr := fmt.Sprintf("%s:%d", conn.Host, conn.Port)
+			connTest, err := net.DialTimeout("tcp", addr, 5*time.Second)
+			if err != nil {
+				testErr = err
+			} else {
+				connTest.Close()
+			}
 		}
 	}
 
