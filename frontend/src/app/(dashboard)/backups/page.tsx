@@ -58,9 +58,14 @@ function statusIndicator(status: string) {
   }
 }
 
-function verifiedBadge(backup: Backup) {
-  if (backup.verified === true) return <span className="text-xs text-emerald-400" title="Backup verified">Verified</span>;
-  if (backup.verified === false) return <span className="text-xs text-red-400" title={backup.verification_error || "Verification failed"}>Failed</span>;
+function verifiedBadge(backup: Backup, onClickError: (msg: string) => void) {
+  if (backup.verified === true) return <span className="text-xs text-emerald-400">Verified</span>;
+  if (backup.verified === false) return (
+    <button onClick={() => onClickError(backup.verification_error || "Verification failed")}
+      className="text-xs text-red-400 underline decoration-dotted hover:text-red-300 cursor-pointer">
+      Failed
+    </button>
+  );
   if (backup.status === "success") return <span className="text-xs text-yellow-400 animate-pulse">Verifying</span>;
   return <span className="text-xs text-slate-600">-</span>;
 }
@@ -82,6 +87,7 @@ export default function BackupHistoryPage() {
   const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -234,7 +240,7 @@ export default function BackupHistoryPage() {
                   <TableCell className="text-slate-400 text-sm">{duration(backup.started_at, backup.completed_at)}</TableCell>
                   <TableCell className="text-slate-400 text-sm">{formatBytes(backup.size_bytes)}</TableCell>
                   <TableCell>{statusIndicator(backup.status)}</TableCell>
-                  <TableCell>{verifiedBadge(backup)}</TableCell>
+                  <TableCell>{verifiedBadge(backup, setVerifyError)}</TableCell>
                   <TableCell className="text-right">
                     {backup.status === "success" ? (
                       <div className="flex items-center justify-end gap-1">
@@ -255,6 +261,19 @@ export default function BackupHistoryPage() {
           </Table>
         )}
       </div>
+
+      {/* Verification Error Dialog */}
+      <Dialog open={!!verifyError} onOpenChange={(o) => !o && setVerifyError(null)}>
+        <DialogContent className="border-white/10 bg-[#1e293b] text-white max-w-md">
+          <DialogHeader><DialogTitle>Verification Error</DialogTitle></DialogHeader>
+          <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 font-mono text-xs text-red-300 break-all">
+            {verifyError}
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" onClick={() => setVerifyError(null)} className="border-white/10 text-slate-400">Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Restore Modal */}
       <Dialog open={!!restoreTarget} onOpenChange={(open) => { if (!open && !restoring) setRestoreTarget(null); }}>
