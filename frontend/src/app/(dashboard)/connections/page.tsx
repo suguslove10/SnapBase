@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, Play } from "lucide-react";
+import { Plus, Trash2, Zap, Play, Database } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
