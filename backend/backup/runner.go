@@ -2,7 +2,10 @@ package backup
 
 import (
 	"compress/gzip"
+	"crypto/aes"
+	"crypto/cipher"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -270,20 +273,51 @@ func resolveStorage(db *sql.DB, cfg *config.Config, connID int, userID int) (sto
 		})
 	}
 
-	// For the default MinIO seeded provider, the secret is stored as plain text (from env)
-	// For user-added providers, it's encrypted. We try to use it as-is since the
-	// seed stores plain text and user-added providers store encrypted.
-	// The handlers.GetStorageForConnection does proper decryption; here we use the
-	// secret as-is since the seed writes unencrypted env values.
+	// Decrypt the secret key — user-added providers encrypt it with JWT secret
+	secretKey := decryptProviderSecret(secretEnc, cfg.JWTSecret)
+
 	return storage.NewStorageClient(storage.ProviderConfig{
 		ProviderType: pType,
 		Endpoint:     endpoint,
 		AccessKey:    accessKey,
-		SecretKey:    secretEnc,
+		SecretKey:    secretKey,
 		Bucket:       bucket,
 		Region:       region,
 		UseSSL:       useSSL,
 	})
+}
+
+// decryptProviderSecret decrypts a storage provider secret key using the JWT secret as AES key.
+// Falls back to returning the raw value if decryption fails (e.g. seeded MinIO plain-text).
+func decryptProviderSecret(encrypted, jwtSecret string) string {
+	key := []byte(jwtSecret)
+	if len(key) > 32 {
+		key = key[:32]
+	}
+	for len(key) < 32 {
+		key = append(key, 0)
+	}
+	data, err := hex.DecodeString(encrypted)
+	if err != nil {
+		return encrypted
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return encrypted
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return encrypted
+	}
+	nonceSize := aesGCM.NonceSize()
+	if len(data) < nonceSize {
+		return encrypted
+	}
+	plaintext, err := aesGCM.Open(nil, data[:nonceSize], data[nonceSize:], nil)
+	if err != nil {
+		return encrypted
+	}
+	return string(plaintext)
 }
 
 func getExtension(dbType string) string {
