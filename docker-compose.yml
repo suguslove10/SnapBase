@@ -66,9 +66,6 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
     depends_on:
       postgres:
         condition: service_healthy
