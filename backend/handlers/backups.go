@@ -11,17 +11,19 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/suguslove10/snapbase/backup"
+	"github.com/suguslove10/snapbase/config"
 	"github.com/suguslove10/snapbase/crypto"
 	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/storage"
 )
 
 type BackupHandler struct {
-	DB             *sql.DB
-	Storage        storage.StorageClient
-	Runner         *backup.Runner
-	RestoreRunner  *backup.RestoreRunner
-	AuditLogger    interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
+	DB            *sql.DB
+	Storage       storage.StorageClient
+	Cfg           *config.Config
+	Runner        *backup.Runner
+	RestoreRunner *backup.RestoreRunner
+	AuditLogger   interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
 }
 
 func (h *BackupHandler) List(c *gin.Context) {
@@ -120,17 +122,19 @@ func (h *BackupHandler) Download(c *gin.Context) {
 	}
 
 	var storagePath string
+	var connID int
 	err = h.DB.QueryRow(`
-		SELECT b.storage_path FROM backup_jobs b
+		SELECT b.storage_path, b.connection_id FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE b.id = $1 AND dc.user_id = $2 AND b.status = 'success'
-	`, backupID, userID).Scan(&storagePath)
+	`, backupID, userID).Scan(&storagePath, &connID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Backup not found"})
 		return
 	}
 
-	obj, err := h.Storage.GetObject(storagePath)
+	store := GetStorageForBackup(h.DB, h.Cfg, connID, userID, h.Storage)
+	obj, err := store.GetObject(storagePath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get backup file"})
 		return

@@ -296,6 +296,18 @@ func GetStorageForConnection(db *sql.DB, cfg *config.Config, connID int, userID 
 	})
 }
 
+// GetStorageForBackup resolves storage for a backup download/restore, falling back to systemDefault.
+func GetStorageForBackup(db *sql.DB, cfg *config.Config, connID int, userID int, systemDefault storage.StorageClient) storage.StorageClient {
+	if cfg == nil {
+		return systemDefault
+	}
+	store, err := GetStorageForConnection(db, cfg, connID, userID)
+	if err != nil || store == nil {
+		return systemDefault
+	}
+	return store
+}
+
 // AES-256 encryption helpers using the JWT secret as key (first 32 bytes, padded if needed)
 func deriveKey(secret string) []byte {
 	key := []byte(secret)
