@@ -68,7 +68,7 @@ export default function ConnectionsPage() {
     try {
       const payload = {
         ...form,
-        storage_provider_id: form.storage_provider_id ? parseInt(form.storage_provider_id) : null,
+        storage_provider_id: (form.storage_provider_id && form.storage_provider_id !== "default") ? parseInt(form.storage_provider_id) : null,
       };
       await api.post("/connections", payload);
       toast.success("Connection created");
@@ -190,7 +190,7 @@ export default function ConnectionsPage() {
                       <Select value={form.storage_provider_id} onValueChange={(v) => setForm({ ...form, storage_provider_id: v })}>
                         <SelectTrigger className={inputClass}><SelectValue placeholder="Default" /></SelectTrigger>
                         <SelectContent className="border-white/10 bg-[#1e293b] text-white">
-                          <SelectItem value="">Default</SelectItem>
+                          <SelectItem value="default">Default</SelectItem>
                           {storageProviders.map((sp) => (
                             <SelectItem key={sp.id} value={sp.id.toString()}>
                               {sp.name}{sp.is_default ? " (default)" : ""}
