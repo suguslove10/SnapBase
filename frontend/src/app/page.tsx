@@ -192,7 +192,7 @@ export default function LandingPage() {
             Get Started Free
           </Link>
           <a
-            href="https://github.com/suguslove10"
+            href="https://github.com/suguslove10/SnapBase"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-xl border border-white/[0.12] px-8 py-3.5 text-sm font-semibold text-slate-300 transition hover:border-[#00b4ff]/30 hover:bg-[#00b4ff]/5 hover:text-white"
@@ -324,24 +324,17 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/[0.06] py-10">
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
-            <div className="flex items-center gap-2.5">
-              <Image src="/logo.png" alt="SnapBase" width={28} height={28} className="rounded-lg" />
-              <span className="font-grotesk text-sm font-semibold text-slate-400">SnapBase</span>
-            </div>
-            <div className="flex items-center gap-6 text-sm text-slate-500">
-              <Link href="/pricing" className="transition hover:text-slate-300">Pricing</Link>
-              <Link href="/security" className="transition hover:text-slate-300">Security</Link>
-              <a href="https://github.com/suguslove10" className="transition hover:text-slate-300" target="_blank" rel="noopener noreferrer">GitHub</a>
-            </div>
-            <p className="text-xs text-slate-600">
-              Built by{" "}
-              <a href="https://thesugu.com" className="text-[#00b4ff] hover:underline" target="_blank" rel="noopener noreferrer">
-                Sugu
-              </a>
-            </p>
+        <div className="mx-auto max-w-6xl px-6 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500">
+            <Link href="/pricing" className="transition hover:text-slate-300">Pricing</Link>
+            <Link href="/security" className="transition hover:text-slate-300">Security</Link>
+            <Link href="/contact" className="transition hover:text-slate-300">Contact</Link>
+            <Link href="/terms" className="transition hover:text-slate-300">Terms</Link>
+            <Link href="/privacy" className="transition hover:text-slate-300">Privacy</Link>
+            <Link href="/refund" className="transition hover:text-slate-300">Refund Policy</Link>
+            <a href="https://github.com/suguslove10/SnapBase" className="transition hover:text-slate-300" target="_blank" rel="noopener noreferrer">GitHub</a>
           </div>
+          <p className="mt-4 text-xs text-slate-700">© 2026 SnapBase · Built by Sugu</p>
         </div>
       </footer>
     </div>
