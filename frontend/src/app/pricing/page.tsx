@@ -111,7 +111,7 @@ export default function PricingPage() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <img src="/logo-icon.png" alt="SnapBase" style={{height:"32px",width:"auto"}} />
+            <img src="/logo-icon.png" alt="SnapBase" style={{height:"44px",width:"auto"}} />
             <span className="font-grotesk text-base font-semibold text-white">SnapBase</span>
           </Link>
           <div className="flex items-center gap-6">

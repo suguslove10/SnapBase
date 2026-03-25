@@ -8,7 +8,7 @@ export default function ContactPage() {
       <div className="mx-auto max-w-3xl px-6 py-16">
         {/* Logo */}
         <Link href="/" className="mb-10 inline-flex items-center gap-2.5">
-          <img src="/logo-icon.png" alt="SnapBase" style={{height:"32px",width:"auto"}} />
+          <img src="/logo-icon.png" alt="SnapBase" style={{height:"44px",width:"auto"}} />
           <span className="font-grotesk text-lg font-semibold text-white">SnapBase</span>
         </Link>
 

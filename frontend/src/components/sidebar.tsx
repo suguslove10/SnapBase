@@ -35,7 +35,7 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="flex h-14 items-center gap-2.5 border-b border-white/[0.06] px-5">
-        <img src="/logo-icon.png" alt="SnapBase" style={{height:"28px",width:"auto"}} />
+        <img src="/logo-icon.png" alt="SnapBase" style={{height:"40px",width:"auto"}} />
         <span className="font-grotesk text-[15px] font-semibold text-white">SnapBase</span>
       </div>
 

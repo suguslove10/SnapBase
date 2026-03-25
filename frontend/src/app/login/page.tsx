@@ -66,7 +66,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2.5">
-            <img src="/logo-icon.png" alt="SnapBase" style={{height:"36px",width:"auto"}} />
+            <img src="/logo-icon.png" alt="SnapBase" style={{height:"44px",width:"auto"}} />
             <span className="font-grotesk text-xl font-semibold text-white">SnapBase</span>
           </Link>
           <p className="mt-3 text-sm text-slate-400">Sign in to your account</p>
