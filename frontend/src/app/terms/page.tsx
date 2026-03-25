@@ -23,7 +23,7 @@ export default function TermsPage() {
         <div className="mt-10 space-y-8 text-sm leading-relaxed text-slate-400">
           <section>
             <h2 className="mb-3 font-grotesk text-lg font-semibold text-white">1. Acceptance of Terms</h2>
-            <p>By accessing or using SnapBase ("Service"), you agree to be bound by these Terms of Service. If you do not agree, please do not use the Service.</p>
+            <p>By accessing or using SnapBase (&ldquo;Service&rdquo;), you agree to be bound by these Terms of Service. If you do not agree, please do not use the Service.</p>
           </section>
 
           <section>
@@ -38,12 +38,12 @@ export default function TermsPage() {
 
           <section>
             <h2 className="mb-3 font-grotesk text-lg font-semibold text-white">4. Acceptable Use</h2>
-            <p>You agree not to misuse the Service. Prohibited activities include but are not limited to: using the Service to store illegal content, attempting to gain unauthorized access to other users' data, overloading the infrastructure, or reverse-engineering the Service.</p>
+            <p>You agree not to misuse the Service. Prohibited activities include but are not limited to: using the Service to store illegal content, attempting to gain unauthorized access to other users&apos; data, overloading the infrastructure, or reverse-engineering the Service.</p>
           </section>
 
           <section>
             <h2 className="mb-3 font-grotesk text-lg font-semibold text-white">5. Payment and Billing</h2>
-            <p>Paid plans are billed in advance on a monthly or annual basis. All fees are non-refundable except as described in our Refund Policy. We reserve the right to change pricing with 30 days' notice.</p>
+            <p>Paid plans are billed in advance on a monthly or annual basis. All fees are non-refundable except as described in our Refund Policy. We reserve the right to change pricing with 30 days&apos; notice.</p>
           </section>
 
           <section>
