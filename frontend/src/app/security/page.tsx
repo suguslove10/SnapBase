@@ -1,11 +1,12 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ShieldCheck, Lock, Globe, Database, FileText, Mail } from "lucide-react";
 
 const sections = [
   {
     icon: Lock,
     title: "Credential Protection",
-    accent: "border-t-emerald-500",
+    color: "#00ff88",
     items: [
       "AES-256-GCM encryption for all database passwords at rest",
       "Credentials masked in the UI after saving — the plaintext never comes back",
@@ -17,7 +18,7 @@ const sections = [
   {
     icon: Globe,
     title: "Data in Transit",
-    accent: "border-t-indigo-500",
+    color: "#00b4ff",
     items: [
       "All API communication served over HTTPS/TLS in production",
       "Database connections use SSL where the target supports it",
@@ -28,7 +29,7 @@ const sections = [
   {
     icon: Database,
     title: "Your Data, Your Control",
-    accent: "border-t-violet-500",
+    color: "#a78bfa",
     items: [
       "We never read, scan, or process the contents of your backup files",
       "Backup files land directly in YOUR storage bucket — we are only a conduit",
@@ -40,7 +41,7 @@ const sections = [
   {
     icon: ShieldCheck,
     title: "Open Source & Self-Hostable",
-    accent: "border-t-cyan-500",
+    color: "#00f5d4",
     items: [
       "Fully open source — read every line of code on GitHub",
       "Self-host on your own infrastructure with Docker Compose in under 5 minutes",
@@ -51,7 +52,7 @@ const sections = [
   {
     icon: FileText,
     title: "Compliance Ready",
-    accent: "border-t-amber-500",
+    color: "#fbbf24",
     items: [
       "Generate signed PDF compliance reports for any date range, on demand",
       "Audit logs provide a complete immutable trail for SOC 2 / ISO 27001 reviews",
@@ -62,9 +63,9 @@ const sections = [
   {
     icon: Mail,
     title: "Responsible Disclosure",
-    accent: "border-t-rose-500",
+    color: "#f87171",
     items: [
-      "Found a vulnerability? Email security@snapbase.local",
+      "Found a vulnerability? Email security@getsnapbase.com",
       "We triage all security reports within 48 hours",
       "We will never take legal action against good-faith security researchers",
       "Critical fixes are patched and released as a priority",
@@ -72,22 +73,43 @@ const sections = [
   },
 ];
 
+const cardStyle = {
+  background: "rgba(13,21,38,0.8)",
+  backdropFilter: "blur(12px)",
+  border: "1px solid rgba(255,255,255,0.06)",
+  borderRadius: "1rem",
+};
+
 export default function SecurityPage() {
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white">
+    <div className="min-h-screen" style={{ background: "#0a0f1e" }}>
+      {/* Background grid */}
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.025]"
+        style={{
+          backgroundImage: `linear-gradient(rgba(0,180,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,180,255,0.5) 1px, transparent 1px)`,
+          backgroundSize: "60px 60px",
+        }}
+      />
+
       {/* Navbar */}
-      <nav className="border-b border-white/[0.06]">
+      <nav
+        className="sticky top-0 z-50 border-b border-white/[0.06]"
+        style={{ background: "rgba(10,15,30,0.85)", backdropFilter: "blur(16px)" }}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center bg-indigo-500 text-[11px] font-black tracking-tight text-white">
-              SB
-            </div>
-            <span className="text-[15px] font-light tracking-wide text-slate-200">SnapBase</span>
+          <Link href="/" className="flex items-center gap-2.5">
+            <Image src="/logo.png" alt="SnapBase" width={32} height={32} className="rounded-lg" />
+            <span className="font-grotesk text-base font-semibold text-white">SnapBase</span>
           </Link>
           <div className="flex items-center gap-6">
-            <Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition">Pricing</Link>
-            <Link href="/security" className="text-sm text-white">Security</Link>
-            <Link href="/login" className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-medium transition hover:from-indigo-500 hover:to-violet-500">
+            <Link href="/pricing" className="text-sm text-slate-400 transition hover:text-white">Pricing</Link>
+            <Link href="/security" className="text-sm text-[#00b4ff]">Security</Link>
+            <Link
+              href="/login"
+              className="rounded-xl px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+            >
               Sign In
             </Link>
           </div>
@@ -95,14 +117,17 @@ export default function SecurityPage() {
       </nav>
 
       {/* Hero */}
-      <section className="relative mx-auto max-w-3xl px-6 pt-20 pb-8 text-center">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/20">
-          <ShieldCheck className="h-8 w-8 text-emerald-400" />
+      <section className="relative mx-auto max-w-3xl px-6 pb-8 pt-20 text-center">
+        {/* Glow */}
+        <div className="pointer-events-none absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full blur-3xl" style={{ background: "rgba(0,255,136,0.06)" }} />
+
+        <div className="relative mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#00ff88]/20 bg-[#00ff88]/10">
+          <ShieldCheck className="h-8 w-8 text-[#00ff88]" />
         </div>
-        <h1 className="text-4xl font-bold tracking-tight md:text-5xl">
-          Security First
+        <h1 className="font-grotesk text-4xl font-bold text-white md:text-5xl">
+          Security <span style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>First</span>
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-lg text-slate-400">
+        <p className="mx-auto mt-4 max-w-xl text-base text-slate-400">
           You&apos;re trusting us with credentials to your most important data.
           Here&apos;s exactly how we protect them.
         </p>
@@ -110,33 +135,35 @@ export default function SecurityPage() {
 
       {/* Trust bar */}
       <div className="mx-auto mb-16 max-w-3xl border-y border-white/[0.06] py-5">
-        <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400">
-          <span className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> AES-256-GCM at rest</span>
-          <span className="text-white/10">|</span>
-          <span className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> TLS in transit</span>
-          <span className="text-white/10">|</span>
-          <span className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Zero credential logging</span>
-          <span className="text-white/10">|</span>
-          <span className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Open source</span>
+        <div className="flex flex-wrap items-center justify-center gap-6 font-jetbrains text-xs text-slate-400">
+          {["AES-256-GCM at rest", "TLS in transit", "Zero credential logging", "Open source"].map((item) => (
+            <span key={item} className="flex items-center gap-1.5">
+              <span className="text-[#00ff88]">✓</span> {item}
+            </span>
+          ))}
         </div>
       </div>
 
       {/* Sections grid */}
-      <section className="mx-auto max-w-6xl px-6 pb-24">
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <section className="relative mx-auto max-w-6xl px-6 pb-24">
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {sections.map((s) => (
             <div
               key={s.title}
-              className={`rounded-xl border border-white/10 border-t-2 ${s.accent} bg-[#1e293b] p-6 transition hover:border-white/20`}
+              className="rounded-2xl p-6 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
+              style={{ ...cardStyle, borderLeft: `3px solid ${s.color}40` }}
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-white/5">
-                <s.icon className="h-5 w-5 text-slate-300" />
+              <div
+                className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl"
+                style={{ background: `${s.color}15`, border: `1px solid ${s.color}25` }}
+              >
+                <s.icon className="h-5 w-5" style={{ color: s.color }} />
               </div>
-              <h3 className="mb-4 text-lg font-semibold">{s.title}</h3>
+              <h3 className="mb-4 font-grotesk text-base font-semibold text-white">{s.title}</h3>
               <ul className="space-y-2">
                 {s.items.map((item) => (
-                  <li key={item} className="flex gap-2 text-sm text-slate-400">
-                    <span className="mt-0.5 shrink-0 text-emerald-500">✓</span>
+                  <li key={item} className="flex gap-2 font-jetbrains text-[11px] leading-relaxed text-slate-400">
+                    <span className="mt-0.5 shrink-0" style={{ color: s.color }}>✓</span>
                     {item}
                   </li>
                 ))}
@@ -147,16 +174,21 @@ export default function SecurityPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/[0.06] py-8 text-center text-sm text-slate-500">
-        <div className="flex items-center justify-center gap-6 mb-3">
-          <Link href="/" className="hover:text-slate-300 transition">Home</Link>
-          <Link href="/pricing" className="hover:text-slate-300 transition">Pricing</Link>
-          <Link href="/security" className="text-slate-300">Security</Link>
+      <footer className="border-t border-white/[0.06] py-10">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
+            <Link href="/" className="flex items-center gap-2.5">
+              <Image src="/logo.png" alt="SnapBase" width={24} height={24} className="rounded-lg" />
+              <span className="font-grotesk text-sm font-semibold text-slate-400">SnapBase</span>
+            </Link>
+            <div className="flex items-center gap-6 text-xs text-slate-600">
+              <Link href="/pricing" className="transition hover:text-slate-400">Pricing</Link>
+              <Link href="/security" className="text-slate-400">Security</Link>
+              <Link href="/terms" className="transition hover:text-slate-400">Terms</Link>
+              <Link href="/privacy" className="transition hover:text-slate-400">Privacy</Link>
+            </div>
+          </div>
         </div>
-        Built by Sugu &middot;{" "}
-        <a href="https://github.com/suguslove10" className="text-indigo-400 hover:underline" target="_blank" rel="noopener noreferrer">
-          github.com/suguslove10
-        </a>
       </footer>
     </div>
   );
