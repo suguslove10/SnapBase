@@ -60,8 +60,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Seed free subscription for new user
+	// Seed free subscription and personal workspace for new user
 	seedFreeSubscription(h.DB, userID)
+	seedOrgForUser(h.DB, userID, req.Email)
 
 	c.JSON(http.StatusCreated, gin.H{"id": userID, "message": "Account created"})
 
@@ -121,13 +122,34 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+
+	var orgID sql.NullInt64
+	var orgName, orgRole sql.NullString
+	h.DB.QueryRow(`
+		SELECT o.id, o.name, m.role
+		FROM organizations o
+		JOIN org_members m ON m.org_id = o.id
+		WHERE m.user_id = $1
+		ORDER BY (m.role = 'owner') ASC, o.created_at ASC
+		LIMIT 1
+	`, userID).Scan(&orgID, &orgName, &orgRole)
+
+	resp := gin.H{
 		"id":         userID,
 		"email":      email,
 		"provider":   provider,
 		"name":       name.String,
 		"avatar_url": avatarURL.String,
-	})
+		"org_id":     nil,
+		"org_name":   nil,
+		"role":       nil,
+	}
+	if orgID.Valid && orgID.Int64 > 0 {
+		resp["org_id"] = orgID.Int64
+		resp["org_name"] = orgName.String
+		resp["role"] = orgRole.String
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {

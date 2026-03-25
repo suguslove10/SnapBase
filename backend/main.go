@@ -76,6 +76,7 @@ func main() {
 	reportHandler := &handlers.ReportHandler{DB: db, Cfg: cfg}
 	storageProviderHandler := &handlers.StorageProviderHandler{DB: db, Cfg: cfg}
 	billingHandler := &handlers.BillingHandler{DB: db, Cfg: cfg}
+	orgHandler := &handlers.OrgHandler{DB: db, EmailConfig: emailCfg}
 
 	// Setup router
 	r := gin.Default()
@@ -91,6 +92,7 @@ func main() {
 
 	// Public routes
 	r.POST("/api/billing/webhook", billingHandler.Webhook)
+	r.GET("/api/invite/:token", orgHandler.GetInvite)
 	r.POST("/api/auth/register", authHandler.Register)
 	r.POST("/api/auth/login", authHandler.Login)
 	r.GET("/api/auth/providers", oauthHandler.Providers)
@@ -102,6 +104,7 @@ func main() {
 	// Protected routes
 	api := r.Group("/api")
 	api.Use(handlers.AuthMiddleware(cfg))
+	api.Use(handlers.OrgContextMiddleware(db))
 	{
 		api.GET("/auth/me", authHandler.Me)
 
@@ -150,6 +153,16 @@ func main() {
 		api.GET("/billing/subscription", billingHandler.GetSubscription)
 		api.POST("/billing/order", billingHandler.CreateOrder)
 		api.POST("/billing/verify", billingHandler.VerifyPayment)
+
+		api.GET("/org", orgHandler.GetOrg)
+		api.PUT("/org", orgHandler.UpdateOrg)
+		api.GET("/org/members", orgHandler.ListMembers)
+		api.POST("/org/invite", orgHandler.InviteMember)
+		api.DELETE("/org/members/:id", orgHandler.RemoveMember)
+		api.PUT("/org/members/:id/role", orgHandler.UpdateMemberRole)
+		api.GET("/org/invites", orgHandler.ListPendingInvites)
+		api.DELETE("/org/invites/:id", orgHandler.DeleteInvite)
+		api.POST("/invite/:token/accept", orgHandler.AcceptInvite)
 	}
 
 	log.Printf("Server starting on port %s", cfg.ServerPort)

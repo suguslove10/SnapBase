@@ -148,6 +148,53 @@ func createTables(db *sql.DB) {
 			updated_at TIMESTAMP DEFAULT NOW(),
 			UNIQUE(user_id, key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS organizations (
+			id SERIAL PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			slug VARCHAR(255) UNIQUE NOT NULL,
+			owner_id INTEGER REFERENCES users(id),
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS org_members (
+			id SERIAL PRIMARY KEY,
+			org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+			user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+			created_at TIMESTAMP DEFAULT NOW(),
+			UNIQUE(org_id, user_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS org_invitations (
+			id SERIAL PRIMARY KEY,
+			org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+			email VARCHAR(255) NOT NULL,
+			role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+			token VARCHAR(255) UNIQUE NOT NULL,
+			invited_by INTEGER REFERENCES users(id),
+			accepted_at TIMESTAMP,
+			expires_at TIMESTAMP NOT NULL,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id)`,
+		`DO $$
+		BEGIN
+			INSERT INTO organizations (name, slug, owner_id)
+			SELECT u.email || '''s Workspace', u.email || '-org-' || u.id::text, u.id
+			FROM users u
+			WHERE NOT EXISTS (SELECT 1 FROM org_members m WHERE m.user_id = u.id);
+
+			INSERT INTO org_members (org_id, user_id, role)
+			SELECT o.id, o.owner_id, 'owner'
+			FROM organizations o
+			ON CONFLICT (org_id, user_id) DO NOTHING;
+
+			UPDATE db_connections dc
+			SET org_id = (
+				SELECT m.org_id FROM org_members m
+				WHERE m.user_id = dc.user_id AND m.role = 'owner'
+				LIMIT 1
+			)
+			WHERE dc.org_id IS NULL;
+		END $$`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

@@ -12,6 +12,7 @@ import {
   HardDrive,
   Settings,
   CreditCard,
+  Users,
   LogOut,
 } from "lucide-react";
 
@@ -26,9 +27,18 @@ const navItems = [
   { href: "/settings",    label: "Settings",       icon: Settings },
 ];
 
+const roleBadgeStyle: Record<string, string> = {
+  owner:    "bg-[#00b4ff]/10 text-[#00b4ff]",
+  admin:    "bg-purple-500/10 text-purple-400",
+  engineer: "bg-emerald-500/10 text-emerald-400",
+  viewer:   "bg-slate-500/10 text-slate-400",
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, role, orgName } = useAuth();
+
+  const showTeam = role === "owner" || role === "admin";
 
   return (
     <aside
@@ -40,6 +50,13 @@ export default function Sidebar() {
         <img src="/logo-icon.png" alt="SnapBase" style={{height:"40px",width:"auto"}} />
         <span className="font-grotesk text-[15px] font-semibold text-white">SnapBase</span>
       </div>
+
+      {/* Org name */}
+      {orgName && (
+        <div className="border-b border-white/[0.04] px-5 py-2.5">
+          <p className="truncate font-jetbrains text-[10px] text-slate-600">{orgName}</p>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">
@@ -64,27 +81,55 @@ export default function Sidebar() {
               )}
               <Icon
                 className={`h-4 w-4 shrink-0 transition-colors ${
-                  active
-                    ? "text-[#00b4ff]"
-                    : "text-slate-600 group-hover:text-slate-300"
+                  active ? "text-[#00b4ff]" : "text-slate-600 group-hover:text-slate-300"
                 }`}
               />
-              <span
-                className={`transition-colors ${
-                  active
-                    ? "text-[#00b4ff]"
-                    : "text-slate-500 group-hover:text-slate-300"
-                }`}
-              >
+              <span className={`transition-colors ${active ? "text-[#00b4ff]" : "text-slate-500 group-hover:text-slate-300"}`}>
                 {item.label}
               </span>
             </Link>
           );
         })}
+
+        {showTeam && (
+          <>
+            <p className="mb-2 mt-4 px-3 font-jetbrains text-[9px] uppercase tracking-widest text-slate-700">
+              Team
+            </p>
+            {(() => {
+              const active = pathname === "/team" || pathname.startsWith("/team/");
+              return (
+                <Link
+                  href="/team"
+                  className="group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150"
+                  style={active ? { background: "rgba(0,180,255,0.10)" } : undefined}
+                >
+                  {active && (
+                    <span
+                      className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full"
+                      style={{ background: "linear-gradient(180deg, #00b4ff, #00f5d4)" }}
+                    />
+                  )}
+                  <Users className={`h-4 w-4 shrink-0 transition-colors ${active ? "text-[#00b4ff]" : "text-slate-600 group-hover:text-slate-300"}`} />
+                  <span className={`transition-colors ${active ? "text-[#00b4ff]" : "text-slate-500 group-hover:text-slate-300"}`}>
+                    Team
+                  </span>
+                </Link>
+              );
+            })()}
+          </>
+        )}
       </nav>
 
-      {/* Logout */}
-      <div className="border-t border-white/[0.06] p-3">
+      {/* Role badge + Logout */}
+      <div className="border-t border-white/[0.06] p-3 space-y-1">
+        {role && (
+          <div className="px-3 py-1">
+            <span className={`rounded-full px-2 py-0.5 font-jetbrains text-[10px] font-semibold uppercase tracking-wider ${roleBadgeStyle[role] ?? roleBadgeStyle.viewer}`}>
+              {role}
+            </span>
+          </div>
+        )}
         <button
           onClick={logout}
           className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all hover:bg-red-500/10"

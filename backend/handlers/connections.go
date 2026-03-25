@@ -21,10 +21,19 @@ type ConnectionHandler struct {
 
 func (h *ConnectionHandler) List(c *gin.Context) {
 	userID := c.GetInt("user_id")
-	rows, err := h.DB.Query(
-		"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
-		userID,
-	)
+	var rows *sql.Rows
+	var err error
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		rows, err = h.DB.Query(
+			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, created_at FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2) ORDER BY created_at DESC",
+			orgIDRaw, userID,
+		)
+	} else {
+		rows, err = h.DB.Query(
+			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
+			userID,
+		)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch connections"})
 		return
@@ -87,10 +96,17 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 	}
 
 	var id int
-	err = h.DB.QueryRow(
-		"INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
-		userID, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID,
-	).Scan(&id)
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		err = h.DB.QueryRow(
+			"INSERT INTO db_connections (user_id, org_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+			userID, orgIDRaw, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID,
+		).Scan(&id)
+	} else {
+		err = h.DB.QueryRow(
+			"INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+			userID, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID,
+		).Scan(&id)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create connection"})
 		return
