@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { ShieldCheck, Lock, Globe, Database, FileText, Mail } from "lucide-react";
 
 const sections = [
@@ -99,7 +98,7 @@ export default function SecurityPage() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <Image src="/logo.png" alt="SnapBase" width={32} height={32} className="rounded-lg" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-black text-[#0a0f1e]" style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}>SB</div>
             <span className="font-grotesk text-base font-semibold text-white">SnapBase</span>
           </Link>
           <div className="flex items-center gap-6">
@@ -178,7 +177,7 @@ export default function SecurityPage() {
         <div className="mx-auto max-w-6xl px-6">
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
             <Link href="/" className="flex items-center gap-2.5">
-              <Image src="/logo.png" alt="SnapBase" width={24} height={24} className="rounded-lg" />
+              <div className="flex h-6 w-6 items-center justify-center rounded-md text-[9px] font-black text-[#0a0f1e]" style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}>SB</div>
               <span className="font-grotesk text-sm font-semibold text-slate-400">SnapBase</span>
             </Link>
             <div className="flex items-center gap-6 text-xs text-slate-600">
