@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
@@ -66,12 +67,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2.5">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-[11px] font-black text-[#0a0f1e]"
-              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-            >
-              SB
-            </div>
+            <Image src="/logo.png" alt="SnapBase" width={36} height={36} className="rounded-xl" />
             <span className="font-grotesk text-xl font-semibold text-white">SnapBase</span>
           </Link>
           <p className="mt-3 text-sm text-slate-400">Sign in to your account</p>

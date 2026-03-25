@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Check, Zap } from "lucide-react";
 
 const tiers = [
@@ -111,12 +112,7 @@ export default function PricingPage() {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-black text-[#0a0f1e]"
-              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-            >
-              SB
-            </div>
+            <Image src="/logo.png" alt="SnapBase" width={32} height={32} className="rounded-lg" />
             <span className="font-grotesk text-base font-semibold text-white">SnapBase</span>
           </Link>
           <div className="flex items-center gap-6">

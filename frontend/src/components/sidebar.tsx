@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
@@ -35,12 +36,7 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="flex h-14 items-center gap-2.5 border-b border-white/[0.06] px-5">
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-black text-[#0a0f1e]"
-          style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-        >
-          SB
-        </div>
+        <Image src="/logo.png" alt="SnapBase" width={28} height={28} className="rounded-lg" />
         <span className="font-grotesk text-[15px] font-semibold text-white">SnapBase</span>
       </div>
 
