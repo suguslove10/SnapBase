@@ -96,9 +96,9 @@ func (h *BillingHandler) CreateOrder(c *gin.Context) {
 	var amount int
 	switch strings.ToLower(req.Plan) {
 	case "pro":
-		amount = 1200 * 100 // $12.00 in cents
+		amount = 1200 // $12.00
 	case "team":
-		amount = 2900 * 100 // $29.00 in cents
+		amount = 2900 // $29.00
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "plan must be 'pro' or 'team'"})
 		return
