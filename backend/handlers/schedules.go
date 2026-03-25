@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -11,6 +12,21 @@ import (
 	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/scheduler"
 )
+
+// isAtMostDaily returns true if the cron expression runs at most once per day.
+// Free plan users may only use daily (or less frequent) schedules.
+func isAtMostDaily(expr string) bool {
+	parts := strings.Fields(expr)
+	if len(parts) != 5 {
+		return false
+	}
+	hour := parts[1]
+	// If hour is a wildcard or step (e.g. *, */6) the schedule runs multiple times per day
+	if hour == "*" || strings.HasPrefix(hour, "*/") {
+		return false
+	}
+	return true
+}
 
 type ScheduleHandler struct {
 	DB        *sql.DB
@@ -59,6 +75,12 @@ func (h *ScheduleHandler) Create(c *gin.Context) {
 	_, err := parser.Parse(req.CronExpression)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cron expression: " + err.Error()})
+		return
+	}
+
+	// Plan enforcement: free plan is limited to daily (or less frequent) schedules
+	if getUserPlan(h.DB, userID) == "free" && !isAtMostDaily(req.CronExpression) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Free plan supports daily backups only. Upgrade to Pro for more frequent schedules.", "upgrade_required": true})
 		return
 	}
 

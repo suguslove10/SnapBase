@@ -127,6 +127,19 @@ func createTables(db *sql.DB) {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)`,
 		`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`,
+		`CREATE TABLE IF NOT EXISTS subscriptions (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id) UNIQUE,
+			stripe_customer_id VARCHAR(255),
+			stripe_subscription_id VARCHAR(255),
+			plan VARCHAR(20) DEFAULT 'free',
+			status VARCHAR(20) DEFAULT 'active',
+			trial_ends_at TIMESTAMP,
+			current_period_end TIMESTAMP,
+			cancel_at_period_end BOOLEAN DEFAULT false,
+			created_at TIMESTAMP DEFAULT NOW(),
+			updated_at TIMESTAMP DEFAULT NOW()
+		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			id SERIAL PRIMARY KEY,
 			user_id INTEGER REFERENCES users(id),

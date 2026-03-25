@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Database, HardDrive, CalendarClock, CheckCircle,
@@ -56,13 +57,19 @@ export default function DashboardPage() {
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [health, setHealth] = useState<ConnHealth[]>([]);
+  const [showUpgradeToast, setShowUpgradeToast] = useState(false);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     api.get("/backups/stats").then((res) => setStats(res.data));
     api.get("/backups/chart").then((res) => setChartData(res.data));
     api.get("/backups/activity").then((res) => setActivity(res.data));
     api.get("/connections/health").then((res) => setHealth(res.data));
-  }, []);
+    if (searchParams.get("upgraded") === "true") {
+      setShowUpgradeToast(true);
+      setTimeout(() => setShowUpgradeToast(false), 5000);
+    }
+  }, [searchParams]);
 
   const statCards = stats ? [
     {
@@ -124,6 +131,17 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Upgrade success toast */}
+      {showUpgradeToast && (
+        <div className="fixed right-6 top-6 z-50 flex items-center gap-3 rounded-2xl border border-[#00ff88]/20 bg-[#00ff88]/10 px-5 py-4 shadow-lg">
+          <CheckCircle className="h-5 w-5 text-[#00ff88]" />
+          <div>
+            <p className="font-grotesk text-sm font-semibold text-white">Plan upgraded!</p>
+            <p className="text-xs text-slate-400">Your new plan is now active.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h1 className="font-grotesk text-2xl font-bold text-white">Dashboard</h1>

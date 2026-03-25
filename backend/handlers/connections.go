@@ -64,6 +64,16 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Plan enforcement: free plan is limited to 2 connections
+	if getUserPlan(h.DB, userID) == "free" {
+		var count int
+		h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE user_id = $1", userID).Scan(&count)
+		if count >= 2 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Free plan is limited to 2 connections. Upgrade to Pro for unlimited connections.", "upgrade_required": true})
+			return
+		}
+	}
+
 	retentionDays := req.RetentionDays
 	if retentionDays <= 0 {
 		retentionDays = 30

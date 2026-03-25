@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   HardDrive,
   Settings,
+  CreditCard,
   LogOut,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/backups",     label: "Backup History", icon: History },
   { href: "/anomalies",   label: "Anomalies",      icon: AlertTriangle },
   { href: "/storage",     label: "Storage",        icon: HardDrive },
+  { href: "/billing",     label: "Billing",        icon: CreditCard },
   { href: "/settings",    label: "Settings",       icon: Settings },
 ];
 

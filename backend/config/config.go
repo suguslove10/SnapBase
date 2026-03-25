@@ -21,6 +21,11 @@ type Config struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	EncryptionKey  string
+	StripeSecretKey      string
+	StripePublishableKey string
+	StripeProPriceID     string
+	StripeTeamPriceID    string
+	StripeWebhookSecret  string
 }
 
 func Load() *Config {
@@ -43,6 +48,11 @@ func Load() *Config {
 		GitHubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		EncryptionKey:  getEnv("ENCRYPTION_KEY", ""),
+		StripeSecretKey:      getEnv("STRIPE_SECRET_KEY", ""),
+		StripePublishableKey: getEnv("STRIPE_PUBLISHABLE_KEY", ""),
+		StripeProPriceID:     getEnv("STRIPE_PRO_PRICE_ID", ""),
+		StripeTeamPriceID:    getEnv("STRIPE_TEAM_PRICE_ID", ""),
+		StripeWebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
 	}
 }
 

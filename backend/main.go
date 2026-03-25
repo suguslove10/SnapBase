@@ -75,6 +75,7 @@ func main() {
 	auditHandler := &handlers.AuditHandler{DB: db}
 	reportHandler := &handlers.ReportHandler{DB: db, Cfg: cfg}
 	storageProviderHandler := &handlers.StorageProviderHandler{DB: db, Cfg: cfg}
+	billingHandler := &handlers.BillingHandler{DB: db, Cfg: cfg}
 
 	// Setup router
 	r := gin.Default()
@@ -89,6 +90,7 @@ func main() {
 	oauthHandler := &handlers.OAuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger}
 
 	// Public routes
+	r.POST("/api/billing/webhook", billingHandler.Webhook)
 	r.POST("/api/auth/register", authHandler.Register)
 	r.POST("/api/auth/login", authHandler.Login)
 	r.GET("/api/auth/providers", oauthHandler.Providers)
@@ -144,6 +146,10 @@ func main() {
 		api.PATCH("/storage-providers/:id/default", storageProviderHandler.SetDefault)
 		api.PATCH("/storage-providers/:id/keys", storageProviderHandler.UpdateKeys)
 		api.POST("/storage-providers/test", storageProviderHandler.Test)
+
+		api.GET("/billing/subscription", billingHandler.GetSubscription)
+		api.POST("/billing/checkout", billingHandler.Checkout)
+		api.POST("/billing/portal", billingHandler.Portal)
 	}
 
 	log.Printf("Server starting on port %s", cfg.ServerPort)

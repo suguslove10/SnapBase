@@ -238,6 +238,9 @@ func (h *OAuthHandler) oauthLoginOrCreate(c *gin.Context, provider, providerID, 
 			}
 			userEmail = email
 
+			// Seed free subscription for new OAuth user
+			seedFreeSubscription(h.DB, userID)
+
 			// Seed default storage provider for new OAuth user
 			h.DB.Exec(`
 				INSERT INTO storage_providers (user_id, name, provider_type, endpoint, access_key, secret_key_encrypted, bucket, use_ssl, is_default)

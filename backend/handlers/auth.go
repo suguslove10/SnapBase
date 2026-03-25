@@ -60,6 +60,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Seed free subscription for new user
+	seedFreeSubscription(h.DB, userID)
+
 	c.JSON(http.StatusCreated, gin.H{"id": userID, "message": "Account created"})
 
 	if h.AuditLogger != nil {

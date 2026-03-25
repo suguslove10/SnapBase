@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Check, Zap } from "lucide-react";
+import api from "@/lib/api";
 
 const tiers = [
   {
@@ -86,6 +88,23 @@ const faqs = [
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(false);
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const router = useRouter();
+
+  const handleCheckout = async (plan: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+    setLoadingPlan(plan);
+    try {
+      const res = await api.post("/billing/checkout", { plan });
+      window.location.href = res.data.url;
+    } catch {
+      setLoadingPlan(null);
+    }
+  };
 
   return (
     <div className="min-h-screen text-white" style={{ background: "#0a0f1e" }}>
@@ -228,17 +247,30 @@ export default function PricingPage() {
                     )}
                   </div>
 
-                  <Link
-                    href={tier.href}
-                    className={`mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold transition ${
-                      tier.highlighted
-                        ? "text-[#0a0f1e] hover:opacity-90"
-                        : "border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white"
-                    }`}
-                    style={tier.highlighted ? { background: "linear-gradient(135deg, #00b4ff, #00f5d4)" } : {}}
-                  >
-                    {tier.cta}
-                  </Link>
+                  {tier.monthly === 0 ? (
+                    <Link
+                      href={tier.href}
+                      className="mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold transition border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white"
+                    >
+                      {tier.cta}
+                    </Link>
+                  ) : tier.name === "Team" ? (
+                    <Link
+                      href="/contact"
+                      className="mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold transition border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white"
+                    >
+                      {tier.cta}
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => handleCheckout(tier.name.toLowerCase())}
+                      disabled={loadingPlan === tier.name.toLowerCase()}
+                      className="mt-6 w-full rounded-xl py-2.5 text-center text-sm font-semibold transition text-[#0a0f1e] hover:opacity-90 disabled:opacity-60"
+                      style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+                    >
+                      {loadingPlan === tier.name.toLowerCase() ? "Redirecting…" : tier.cta}
+                    </button>
+                  )}
 
                   <ul className="mt-6 space-y-3">
                     {tier.features.map((f) => (
