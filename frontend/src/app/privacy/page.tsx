@@ -8,7 +8,7 @@ export default function PrivacyPage() {
       <div className="mx-auto max-w-3xl px-6 py-16">
         {/* Logo */}
         <Link href="/" className="mb-10 inline-flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl text-[10px] font-black text-[#0a0f1e]" style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}>SB</div>
+          <img src="/logo-icon.png" alt="SnapBase" style={{height:"32px",width:"auto"}} />
           <span className="font-grotesk text-lg font-semibold text-white">SnapBase</span>
         </Link>
 
