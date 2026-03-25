@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Trash2, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 interface Schedule {
   id: number;
@@ -68,6 +69,8 @@ const inputClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white pl
 const selectClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white";
 
 export default function SchedulesPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("manage_schedules");
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,7 +135,7 @@ export default function SchedulesPage() {
           <p className="mt-1 text-sm text-slate-500">Automate your database backups</p>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canManage && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <button
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)]"
@@ -196,7 +199,7 @@ export default function SchedulesPage() {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {/* Content */}
@@ -242,7 +245,8 @@ export default function SchedulesPage() {
                 </div>
                 <Switch
                   checked={s.enabled}
-                  onCheckedChange={(checked) => handleToggle(s.id, checked)}
+                  disabled={!canManage}
+                  onCheckedChange={(checked) => canManage && handleToggle(s.id, checked)}
                   className="ml-3 shrink-0"
                 />
               </div>
@@ -270,15 +274,17 @@ export default function SchedulesPage() {
               </div>
 
               {/* Delete */}
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => handleDelete(s.id)}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </button>
-              </div>
+              {canManage && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={() => handleDelete(s.id)}
+                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

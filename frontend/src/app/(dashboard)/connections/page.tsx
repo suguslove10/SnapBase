@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Trash2, Zap, Play, Database } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 interface Connection {
   id: number;
@@ -59,6 +60,9 @@ const inputClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white pl
 const selectClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white";
 
 export default function ConnectionsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("manage_connections");
+  const canTrigger = hasPermission("trigger_backup");
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -153,7 +157,7 @@ export default function ConnectionsPage() {
           <h1 className="font-grotesk text-2xl font-bold text-white">Connections</h1>
           <p className="mt-1 text-sm text-slate-500">Manage your database connections</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canManage && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <button
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)]"
@@ -275,7 +279,7 @@ export default function ConnectionsPage() {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {/* Content */}
@@ -344,29 +348,37 @@ export default function ConnectionsPage() {
                 </p>
 
                 {/* Actions */}
-                <div className="mt-4 flex items-center gap-2">
-                  <button
-                    onClick={() => handleTest(conn.id)}
-                    disabled={testing === conn.id}
-                    className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-[#00b4ff]/30 hover:text-white disabled:opacity-50"
-                  >
-                    <Zap className="h-3 w-3" />
-                    {testing === conn.id ? "Testing…" : "Test"}
-                  </button>
-                  <button
-                    onClick={() => handleBackup(conn.id)}
-                    className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-[#00f5d4]/30 hover:text-white"
-                  >
-                    <Play className="h-3 w-3" />
-                    Backup
-                  </button>
-                  <button
-                    onClick={() => handleDelete(conn.id)}
-                    className="ml-auto rounded-lg p-1.5 text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                {(canManage || canTrigger) && (
+                  <div className="mt-4 flex items-center gap-2">
+                    {canManage && (
+                      <button
+                        onClick={() => handleTest(conn.id)}
+                        disabled={testing === conn.id}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-[#00b4ff]/30 hover:text-white disabled:opacity-50"
+                      >
+                        <Zap className="h-3 w-3" />
+                        {testing === conn.id ? "Testing…" : "Test"}
+                      </button>
+                    )}
+                    {canTrigger && (
+                      <button
+                        onClick={() => handleBackup(conn.id)}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-[#00f5d4]/30 hover:text-white"
+                      >
+                        <Play className="h-3 w-3" />
+                        Backup
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
+                        onClick={() => handleDelete(conn.id)}
+                        className="ml-auto rounded-lg p-1.5 text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
