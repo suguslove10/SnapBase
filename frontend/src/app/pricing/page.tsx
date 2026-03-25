@@ -101,7 +101,7 @@ export default function PricingPage() {
   const handleCheckout = async (plan: string) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) {
-      router.push("/login");
+      router.push("/login?redirect=/pricing");
       return;
     }
     setLoadingPlan(plan);

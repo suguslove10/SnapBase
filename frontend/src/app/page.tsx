@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Database, Clock, Cloud, Mail, Lock, Download, ShieldCheck, Zap } from "lucide-react";
+import NavbarAuthButton from "@/components/NavbarAuthButton";
 
 const features = [
   {
@@ -152,13 +153,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-6">
             <Link href="/pricing" className="text-sm text-slate-400 transition hover:text-white">Pricing</Link>
             <Link href="/security" className="text-sm text-slate-400 transition hover:text-white">Security</Link>
-            <Link
-              href="/login"
-              className="rounded-lg px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
-              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-            >
-              Sign In
-            </Link>
+            <NavbarAuthButton />
           </div>
         </div>
       </nav>

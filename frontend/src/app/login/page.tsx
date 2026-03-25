@@ -1,23 +1,36 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthProviders, setOauthProviders] = useState<{ google: boolean; github: boolean }>({ google: false, github: false });
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
+    // Redirect to dashboard if already logged in with valid token
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        if (typeof payload.exp === "number" && payload.exp * 1000 > Date.now()) {
+          router.replace("/dashboard");
+          return;
+        }
+      } catch { /* invalid token — ignore */ }
+      localStorage.removeItem("token");
+    }
     api.get("/auth/providers").then((res) => setOauthProviders(res.data)).catch(() => {});
-  }, []);
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +39,8 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", { email, password });
       localStorage.setItem("token", res.data.token);
-      router.push("/dashboard");
+      const redirect = searchParams.get("redirect");
+      router.push(redirect || "/dashboard");
     } catch {
       setError("Invalid email or password");
     } finally {
@@ -161,5 +175,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }
