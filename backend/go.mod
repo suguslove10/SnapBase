@@ -9,6 +9,7 @@ require (
 	github.com/jung-kurt/gofpdf v1.16.2
 	github.com/lib/pq v1.10.9
 	github.com/minio/minio-go/v7 v7.0.74
+	github.com/razorpay/razorpay-go v1.4.0
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/crypto v0.27.0
 )
@@ -38,7 +39,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/rs/xid v1.6.0 // indirect
-	github.com/stripe/stripe-go/v76 v76.25.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.10.0 // indirect

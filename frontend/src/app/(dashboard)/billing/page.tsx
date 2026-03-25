@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { CreditCard, Zap, Check, ExternalLink } from "lucide-react";
+import { CreditCard, Zap, Check } from "lucide-react";
 import api from "@/lib/api";
 
 interface Subscription {
@@ -10,6 +10,13 @@ interface Subscription {
   status: string;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+}
+
+declare global {
+  interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Razorpay: any;
+  }
 }
 
 const planDetails: Record<string, { label: string; color: string; features: string[] }> = {
@@ -33,7 +40,7 @@ const planDetails: Record<string, { label: string; color: string; features: stri
 export default function BillingPage() {
   const [sub, setSub] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
-  const [portalLoading, setPortalLoading] = useState(false);
+  const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null);
 
   useEffect(() => {
     api.get("/billing/subscription")
@@ -41,13 +48,57 @@ export default function BillingPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const openPortal = async () => {
-    setPortalLoading(true);
+  const handleUpgrade = async (plan: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) return;
+    setUpgradingPlan(plan);
     try {
-      const res = await api.post("/billing/portal", {});
-      window.location.href = res.data.url;
+      const orderRes = await api.post("/billing/order", { plan });
+      const { order_id, amount, currency, key_id } = orderRes.data;
+
+      await new Promise<void>((resolve, reject) => {
+        if (window.Razorpay) { resolve(); return; }
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Razorpay"));
+        document.body.appendChild(script);
+      });
+
+      let userEmail = "";
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        userEmail = payload.email || "";
+      } catch { /* ignore */ }
+
+      const options = {
+        key: key_id,
+        amount,
+        currency,
+        name: "SnapBase",
+        description: plan === "pro" ? "SnapBase Pro - Monthly" : "SnapBase Team - Monthly",
+        order_id,
+        prefill: { email: userEmail },
+        theme: { color: "#00b4ff" },
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          await api.post("/billing/verify", {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            plan,
+          });
+          window.location.href = "/dashboard?upgraded=true";
+        },
+        modal: {
+          ondismiss: () => setUpgradingPlan(null),
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+      setUpgradingPlan(null);
     } catch {
-      setPortalLoading(false);
+      setUpgradingPlan(null);
     }
   };
 
@@ -73,44 +124,36 @@ export default function BillingPage() {
       <div className="rounded-2xl p-6" style={cardStyle}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: `${details.color}15`, border: `1px solid ${details.color}25` }}>
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-xl"
+              style={{ background: `${details.color}15`, border: `1px solid ${details.color}25` }}
+            >
               <CreditCard className="h-5 w-5" style={{ color: details.color }} />
             </div>
             <div>
               <p className="font-grotesk text-sm font-semibold text-white">
                 Current Plan:{" "}
                 <span style={{ color: details.color }}>{details.label}</span>
+                {isPaid && <span className="ml-2 text-[#00ff88]">✓ Active</span>}
               </p>
-              {loading ? (
-                <p className="mt-0.5 text-xs text-slate-500">Loading…</p>
-              ) : sub?.status ? (
-                <p className="mt-0.5 font-jetbrains text-[11px] text-slate-500 capitalize">
-                  Status: {sub.status}
-                  {sub.cancel_at_period_end && " · Cancels at period end"}
-                  {sub.current_period_end && ` · Renews ${new Date(sub.current_period_end).toLocaleDateString()}`}
+              {!loading && sub?.current_period_end && (
+                <p className="mt-0.5 font-jetbrains text-[11px] text-slate-500">
+                  Renews {new Date(sub.current_period_end).toLocaleDateString()}
                 </p>
-              ) : null}
+              )}
             </div>
           </div>
 
-          {isPaid ? (
+          {!isPaid && (
             <button
-              onClick={openPortal}
-              disabled={portalLoading}
-              className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] px-4 py-2 text-xs font-medium text-slate-300 transition hover:border-[#00b4ff]/30 hover:text-white disabled:opacity-50"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              {portalLoading ? "Opening…" : "Manage Subscription"}
-            </button>
-          ) : (
-            <Link
-              href="/pricing"
-              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold text-[#0a0f1e] transition hover:opacity-90"
+              onClick={() => handleUpgrade("pro")}
+              disabled={upgradingPlan === "pro"}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold text-[#0a0f1e] transition hover:opacity-90 disabled:opacity-50"
               style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
             >
               <Zap className="h-3.5 w-3.5" />
-              Upgrade
-            </Link>
+              {upgradingPlan === "pro" ? "Loading…" : "Upgrade to Pro"}
+            </button>
           )}
         </div>
 
@@ -134,15 +177,21 @@ export default function BillingPage() {
           <Zap className="mx-auto mb-3 h-7 w-7 text-[#00b4ff]" />
           <h2 className="font-grotesk text-xl font-bold text-white">Unlock more with Pro</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-slate-400">
-            Unlimited connections, frequent backups, and priority support — starting at $10/mo.
+            Unlimited connections, frequent backups, and priority support — $12/mo.
           </p>
-          <Link
-            href="/pricing"
-            className="mt-6 inline-block rounded-xl px-8 py-3 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
-            style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-          >
-            View Plans
-          </Link>
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <button
+              onClick={() => handleUpgrade("pro")}
+              disabled={upgradingPlan === "pro"}
+              className="rounded-xl px-8 py-3 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+            >
+              {upgradingPlan === "pro" ? "Loading…" : "Upgrade to Pro — $12/mo"}
+            </button>
+            <Link href="/pricing" className="text-sm text-slate-400 transition hover:text-white">
+              View all plans
+            </Link>
+          </div>
         </div>
       )}
     </div>

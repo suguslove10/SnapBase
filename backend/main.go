@@ -148,8 +148,8 @@ func main() {
 		api.POST("/storage-providers/test", storageProviderHandler.Test)
 
 		api.GET("/billing/subscription", billingHandler.GetSubscription)
-		api.POST("/billing/checkout", billingHandler.Checkout)
-		api.POST("/billing/portal", billingHandler.Portal)
+		api.POST("/billing/order", billingHandler.CreateOrder)
+		api.POST("/billing/verify", billingHandler.VerifyPayment)
 	}
 
 	log.Printf("Server starting on port %s", cfg.ServerPort)

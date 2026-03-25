@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { Check, Zap } from "lucide-react";
 import api from "@/lib/api";
 
+declare global {
+  interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Razorpay: any;
+  }
+}
+
 const tiers = [
   {
     name: "Free",
@@ -99,8 +106,53 @@ export default function PricingPage() {
     }
     setLoadingPlan(plan);
     try {
-      const res = await api.post("/billing/checkout", { plan });
-      window.location.href = res.data.url;
+      // Create Razorpay order
+      const orderRes = await api.post("/billing/order", { plan });
+      const { order_id, amount, currency, key_id } = orderRes.data;
+
+      // Load Razorpay script dynamically
+      await new Promise<void>((resolve, reject) => {
+        if (window.Razorpay) { resolve(); return; }
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Razorpay"));
+        document.body.appendChild(script);
+      });
+
+      // Get user email from localStorage token (decode JWT)
+      let userEmail = "";
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        userEmail = payload.email || "";
+      } catch { /* ignore */ }
+
+      const options = {
+        key: key_id,
+        amount,
+        currency,
+        name: "SnapBase",
+        description: plan === "pro" ? "SnapBase Pro - Monthly" : "SnapBase Team - Monthly",
+        order_id,
+        prefill: { email: userEmail },
+        theme: { color: "#00b4ff" },
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          await api.post("/billing/verify", {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            plan,
+          });
+          window.location.href = "/dashboard?upgraded=true";
+        },
+        modal: {
+          ondismiss: () => setLoadingPlan(null),
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+      setLoadingPlan(null);
     } catch {
       setLoadingPlan(null);
     }
