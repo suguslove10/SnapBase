@@ -37,8 +37,8 @@ const features = [
   },
   {
     icon: Lock,
-    title: "AES-256 Encryption",
-    desc: "Database credentials encrypted at rest and in transit. Your secrets never leave the server unencrypted.",
+    title: "Zero-Knowledge Encryption",
+    desc: "Backups AES-256 encrypted before leaving your server. Credentials encrypted at rest. Only you hold the key — we cannot read your data.",
     gradient: "from-[#00f5d4]/20 to-[#00f5d4]/5",
     iconColor: "text-[#00f5d4]",
     border: "hover:border-[#00f5d4]/30",

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, RefreshCw, History, RotateCcw, Terminal, Zap, Copy, Check } from "lucide-react";
+import { Download, RefreshCw, History, RotateCcw, Terminal, Zap, Copy, Check, Lock } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
@@ -21,6 +21,7 @@ interface Backup {
   started_at: string | null;
   completed_at: string | null;
   restore_status: string | null;
+  encrypted: boolean;
   verified: boolean | null;
   verification_error: string | null;
 }
@@ -313,8 +314,16 @@ export default function BackupHistoryPage() {
                     style={{ borderLeft: `2px solid ${statusBorderColor[backup.status] || "transparent"}` }}
                   >
                     <td className="px-4 py-3">
-                      <span className="font-grotesk text-sm font-medium text-white">{backup.connection_name}</span>
-                      <span className="ml-2 font-jetbrains text-[10px] text-slate-600">{backup.connection_type}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-grotesk text-sm font-medium text-white">{backup.connection_name}</span>
+                        <span className="font-jetbrains text-[10px] text-slate-600">{backup.connection_type}</span>
+                        {backup.encrypted && (
+                          <span title="AES-256 encrypted" className="flex items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5">
+                            <Lock className="h-2.5 w-2.5 text-emerald-400" />
+                            <span className="font-jetbrains text-[9px] text-emerald-400">AES-256</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-xs text-slate-400">{formatDate(backup.started_at)}</p>
@@ -443,6 +452,23 @@ export default function BackupHistoryPage() {
               <p className="text-xs text-slate-400">
                 Run these commands on any machine with the database CLI tools installed.
               </p>
+              {restoreTarget.encrypted && (
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <p className="text-xs text-emerald-300 font-medium">This backup is AES-256 encrypted</p>
+                  </div>
+                  <p className="mt-1.5 font-jetbrains text-[10px] text-emerald-400/70">
+                    Download the <code>.gz.enc</code> file, then decrypt it first:
+                  </p>
+                  <div className="mt-2 rounded-lg bg-black/40 p-2.5 font-jetbrains text-[11px] text-emerald-300">
+                    {`# Using openssl to decrypt (you'll need your backup password):\nopenssl enc -d -aes-256-gcm -in backup.gz.enc -out backup.gz`}
+                  </div>
+                  <p className="mt-1.5 font-jetbrains text-[10px] text-emerald-400/70">
+                    Or use the 1-Click Restore tab — SnapBase decrypts automatically.
+                  </p>
+                </div>
+              )}
               {buildCliCommands(restoreTarget).map((step) => (
                 <div key={step.label} className="space-y-1.5">
                   <p className="font-jetbrains text-[10px] uppercase tracking-wider text-slate-500">{step.label}</p>

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/suguslove10/snapbase/config"
+	"github.com/suguslove10/snapbase/crypto"
 	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/notifications"
 	"github.com/suguslove10/snapbase/storage"
@@ -67,8 +68,40 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	}
 	defer os.Remove(tmpFile)
 
+	// Check if encryption is enabled for this connection
+	var encEnabled bool
+	var encKeyEnc string
+	r.DB.QueryRow(
+		"SELECT COALESCE(encryption_enabled, false), COALESCE(encryption_key_encrypted, '') FROM db_connections WHERE id = $1",
+		conn.ID,
+	).Scan(&encEnabled, &encKeyEnc)
+
+	uploadFile := tmpFile
+	isEncrypted := false
+	var encTmpFile string
+
+	if encEnabled && encKeyEnc != "" {
+		// Decrypt the stored key
+		plainKey, err := crypto.Decrypt(encKeyEnc)
+		if err != nil {
+			r.failJob(jobID, "Failed to decrypt backup encryption key: "+err.Error())
+			r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
+			return
+		}
+		// Encrypt the backup file
+		encTmpFile = tmpFile + ".enc"
+		if err := crypto.EncryptFile(tmpFile, encTmpFile, plainKey); err != nil {
+			r.failJob(jobID, "Failed to encrypt backup file: "+err.Error())
+			r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
+			return
+		}
+		defer os.Remove(encTmpFile)
+		uploadFile = encTmpFile
+		isEncrypted = true
+	}
+
 	// Get file info
-	info, err := os.Stat(tmpFile)
+	info, err := os.Stat(uploadFile)
 	if err != nil {
 		r.failJob(jobID, "Failed to stat backup file: "+err.Error())
 		r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
@@ -77,11 +110,14 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 
 	// Build storage path
 	ext := getExtension(conn.Type)
+	if isEncrypted {
+		ext += ".enc"
+	}
 	storagePath := fmt.Sprintf("%d/%d/%s%s",
 		conn.UserID, conn.ID, now.Format("2006-01-02T15-04-05"), ext)
 
-	// Upload to MinIO
-	file, err := os.Open(tmpFile)
+	// Upload to storage
+	file, err := os.Open(uploadFile)
 	if err != nil {
 		r.failJob(jobID, "Failed to open backup file: "+err.Error())
 		r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
@@ -99,8 +135,8 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	// Mark success
 	completed := time.Now()
 	_, err = r.DB.Exec(
-		"UPDATE backup_jobs SET status = 'success', size_bytes = $1, storage_path = $2, completed_at = $3 WHERE id = $4",
-		info.Size(), storagePath, completed, jobID,
+		"UPDATE backup_jobs SET status = 'success', size_bytes = $1, storage_path = $2, completed_at = $3, encrypted = $4 WHERE id = $5",
+		info.Size(), storagePath, completed, isEncrypted, jobID,
 	)
 	if err != nil {
 		log.Printf("Failed to update backup job: %v", err)

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, Play, Database } from "lucide-react";
+import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -21,6 +21,7 @@ interface Connection {
   username: string;
   retention_days: number;
   storage_provider_id: number | null;
+  encryption_enabled: boolean;
   created_at: string;
 }
 
@@ -69,6 +70,10 @@ export default function ConnectionsPage() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, boolean>>({});
   const [storageProviders, setStorageProviders] = useState<StorageProvider[]>([]);
+  const [encTarget, setEncTarget] = useState<Connection | null>(null);
+  const [encPassword, setEncPassword] = useState("");
+  const [encConfirm, setEncConfirm] = useState("");
+  const [encSaving, setEncSaving] = useState(false);
   const [form, setForm] = useState({
     name: "", type: "postgres", host: "localhost", port: 5432,
     database: "", username: "", password: "", retention_days: 30, storage_provider_id: "",
@@ -144,6 +149,32 @@ export default function ConnectionsPage() {
       toast.success("Backup triggered");
     } catch {
       toast.error("Failed to trigger backup");
+    }
+  };
+
+  const openEncModal = (conn: Connection) => {
+    setEncTarget(conn);
+    setEncPassword("");
+    setEncConfirm("");
+  };
+
+  const handleSetEncryption = async (enabled: boolean) => {
+    if (!encTarget) return;
+    if (enabled) {
+      if (encPassword.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+      if (encPassword !== encConfirm) { toast.error("Passwords do not match"); return; }
+    }
+    setEncSaving(true);
+    try {
+      await api.post(`/connections/${encTarget.id}/encryption`, { enabled, password: encPassword });
+      toast.success(enabled ? "Encryption enabled — future backups will be AES-256 encrypted" : "Encryption disabled");
+      setEncTarget(null);
+      fetchConnections();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to update encryption";
+      toast.error(msg);
+    } finally {
+      setEncSaving(false);
     }
   };
 
@@ -317,6 +348,17 @@ export default function ConnectionsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
                     <h3 className="font-grotesk text-base font-semibold text-white">{conn.name}</h3>
+                    {conn.encryption_enabled ? (
+                      <span title="Backup encryption enabled" className="flex items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5">
+                        <Lock className="h-2.5 w-2.5 text-emerald-400" />
+                        <span className="font-jetbrains text-[9px] text-emerald-400">Encrypted</span>
+                      </span>
+                    ) : (
+                      <span title="Backup encryption disabled" className="flex items-center gap-1 rounded-md border border-slate-700/50 bg-slate-800/30 px-1.5 py-0.5">
+                        <LockOpen className="h-2.5 w-2.5 text-slate-600" />
+                        <span className="font-jetbrains text-[9px] text-slate-600">Unencrypted</span>
+                      </span>
+                    )}
                     {tested === true && (
                       <span className="relative flex h-2 w-2">
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00ff88] opacity-75" />
@@ -371,6 +413,15 @@ export default function ConnectionsPage() {
                     )}
                     {canManage && (
                       <button
+                        onClick={() => openEncModal(conn)}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-emerald-500/30 hover:text-emerald-300"
+                      >
+                        <ShieldCheck className="h-3 w-3" />
+                        Encryption
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
                         onClick={() => handleDelete(conn.id)}
                         className="ml-auto rounded-lg p-1.5 text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
                       >
@@ -384,6 +435,93 @@ export default function ConnectionsPage() {
           })}
         </div>
       )}
+
+      {/* Encryption Settings Modal */}
+      <Dialog open={!!encTarget} onOpenChange={(o) => { if (!o && !encSaving) setEncTarget(null); }}>
+        <DialogContent
+          className="max-w-md text-white"
+          style={{ background: "#0d1526", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "1.25rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-grotesk text-lg font-semibold text-white flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
+              Backup Encryption
+            </DialogTitle>
+          </DialogHeader>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Encrypt your backups with AES-256 before uploading to storage. Even if your storage bucket is compromised, backups are unreadable without your password.
+          </p>
+
+          {encTarget?.encryption_enabled ? (
+            /* Currently enabled — offer to disable */
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <Lock className="h-5 w-5 text-emerald-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-emerald-300">Encryption is active</p>
+                  <p className="mt-0.5 font-jetbrains text-[10px] text-emerald-400/70">Future backups will be AES-256 encrypted</p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 font-jetbrains text-[11px] text-amber-400">
+                ⚠ Disabling will not re-encrypt or decrypt existing backups. They remain in their current state.
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setEncTarget(null)}
+                  className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white">
+                  Cancel
+                </button>
+                <button onClick={() => handleSetEncryption(false)} disabled={encSaving}
+                  className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50">
+                  {encSaving ? "Disabling…" : "Disable Encryption"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Currently disabled — offer to enable */
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Encryption Password</Label>
+                <Input
+                  type="password"
+                  value={encPassword}
+                  onChange={(e) => setEncPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  className="rounded-xl border-white/[0.08] bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-emerald-500/50"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Confirm Password</Label>
+                <Input
+                  type="password"
+                  value={encConfirm}
+                  onChange={(e) => setEncConfirm(e.target.value)}
+                  placeholder="Repeat password"
+                  className="rounded-xl border-white/[0.08] bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-emerald-500/50"
+                />
+              </div>
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 font-jetbrains text-[11px] text-red-400 leading-relaxed">
+                ⚠ If you lose this password, your encrypted backups <strong>cannot be restored</strong>. We cannot recover it for you.
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setEncTarget(null)}
+                  className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSetEncryption(true)}
+                  disabled={encSaving || encPassword.length < 8 || encPassword !== encConfirm}
+                  className="flex items-center gap-1.5 rounded-xl px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg, #10b981, #059669)" }}
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  {encSaving ? "Enabling…" : "Enable Encryption"}
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

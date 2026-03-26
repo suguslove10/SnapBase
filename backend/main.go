@@ -114,6 +114,8 @@ func main() {
 		api.PATCH("/connections/:id/retention", connHandler.UpdateRetention)
 		api.POST("/connections/:id/test", connHandler.TestConnection)
 		api.PATCH("/connections/:id/storage", connHandler.UpdateStorageProvider)
+		api.GET("/connections/:id/encryption", connHandler.GetEncryption)
+		api.POST("/connections/:id/encryption", connHandler.SetEncryption)
 
 		api.GET("/backups", backupHandler.List)
 		api.POST("/backups/trigger/:id", backupHandler.Trigger)

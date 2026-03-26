@@ -15,6 +15,7 @@ import (
 	"github.com/suguslove10/snapbase/models"
 )
 
+
 type ConnectionHandler struct {
 	DB *sql.DB
 }
@@ -25,12 +26,12 @@ func (h *ConnectionHandler) List(c *gin.Context) {
 	var err error
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		rows, err = h.DB.Query(
-			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, created_at FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2) ORDER BY created_at DESC",
+			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, COALESCE(encryption_enabled, false), created_at FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2) ORDER BY created_at DESC",
 			orgIDRaw, userID,
 		)
 	} else {
 		rows, err = h.DB.Query(
-			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
+			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, COALESCE(encryption_enabled, false), created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
 			userID,
 		)
 	}
@@ -44,7 +45,7 @@ func (h *ConnectionHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var conn models.DBConnection
 		var spID sql.NullInt64
-		if err := rows.Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.RetentionDays, &spID, &conn.CreatedAt); err != nil {
+		if err := rows.Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.RetentionDays, &spID, &conn.EncryptionEnabled, &conn.CreatedAt); err != nil {
 			continue
 		}
 		if spID.Valid {
@@ -265,6 +266,100 @@ func (h *ConnectionHandler) UpdateStorageProvider(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Storage provider updated"})
+}
+
+// GetEncryption returns the encryption status for a connection. Never returns the key.
+func (h *ConnectionHandler) GetEncryption(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var enabled bool
+	err = h.DB.QueryRow(
+		"SELECT COALESCE(encryption_enabled, false) FROM db_connections WHERE id = $1 AND user_id = $2",
+		id, userID,
+	).Scan(&enabled)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
+}
+
+// SetEncryption enables or disables backup encryption for a connection.
+// The raw password is never stored — only a PBKDF2-derived key encrypted with the master key.
+func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		Enabled  bool   `json:"enabled"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Verify connection belongs to user
+	var exists bool
+	h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM db_connections WHERE id = $1 AND user_id = $2)", id, userID).Scan(&exists)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	if !req.Enabled {
+		// Disable: clear key, set flag to false
+		_, err = h.DB.Exec(
+			"UPDATE db_connections SET encryption_enabled = false, encryption_key_encrypted = NULL WHERE id = $1 AND user_id = $2",
+			id, userID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disable encryption"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Encryption disabled"})
+		return
+	}
+
+	// Enable: require password
+	if req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password is required to enable encryption"})
+		return
+	}
+	if len(req.Password) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be at least 8 characters"})
+		return
+	}
+
+	// Derive 32-byte key from password using connection ID as salt
+	salt := fmt.Sprintf("snapbase-backup-%d-%d", userID, id)
+	derivedKey := crypto.DeriveKey(req.Password, salt)
+
+	// Encrypt the derived key using the master ENCRYPTION_KEY
+	encKey, err := crypto.Encrypt(string(derivedKey))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
+		return
+	}
+
+	_, err = h.DB.Exec(
+		"UPDATE db_connections SET encryption_enabled = true, encryption_key_encrypted = $1 WHERE id = $2 AND user_id = $3",
+		encKey, id, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enable encryption"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Encryption enabled"})
 }
 
 func (h *ConnectionHandler) Health(c *gin.Context) {

@@ -37,12 +37,15 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 	// Get backup info
 	var storagePath, dbType, host, username, passwordEnc, dbName string
 	var port int
+	var isEncrypted bool
+	var encKeyEnc string
 	err := r.DB.QueryRow(`
-		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name
+		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name,
+		       COALESCE(b.encrypted, false), COALESCE(dc.encryption_key_encrypted, '')
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE b.id = $1 AND dc.user_id = $2 AND b.status = 'success'
-	`, backupID, userID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName)
+	`, backupID, userID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &isEncrypted, &encKeyEnc)
 	if err != nil {
 		send("error", "Backup not found or not eligible for restore")
 		return
@@ -53,6 +56,17 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 		if plain, decErr := crypto.Decrypt(passwordEnc); decErr == nil {
 			passwordEnc = plain
 		}
+	}
+
+	// Decrypt backup encryption key if present
+	var backupEncKey string
+	if isEncrypted && encKeyEnc != "" {
+		plain, decErr := crypto.Decrypt(encKeyEnc)
+		if decErr != nil {
+			send("error", "Failed to decrypt backup encryption key")
+			return
+		}
+		backupEncKey = plain
 	}
 
 	// Update restore status
@@ -84,6 +98,26 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 	}
 	io.Copy(f, obj)
 	f.Close()
+
+	// Decrypt if backup was encrypted
+	if isEncrypted {
+		send("log", "Decrypting backup file (AES-256-GCM)...")
+		decryptedGz := tmpGz + ".dec"
+		defer os.Remove(decryptedGz)
+		if err := crypto.DecryptFile(tmpGz, decryptedGz, backupEncKey); err != nil {
+			send("error", fmt.Sprintf("Failed to decrypt backup: %v", err))
+			r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
+			return
+		}
+		// Swap: work on the decrypted file from here on
+		os.Remove(tmpGz)
+		if err := os.Rename(decryptedGz, tmpGz); err != nil {
+			send("error", fmt.Sprintf("Failed to stage decrypted file: %v", err))
+			r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
+			return
+		}
+		send("log", "Backup decrypted successfully")
+	}
 
 	// Decompress
 	send("log", "Decompressing backup file...")

@@ -4,6 +4,18 @@ import { ShieldCheck, Lock, Globe, Database, FileText, Mail } from "lucide-react
 const sections = [
   {
     icon: Lock,
+    title: "Zero-Knowledge Backup Encryption",
+    color: "#10b981",
+    items: [
+      "Optional AES-256-GCM per-connection backup encryption — backups are encrypted before leaving your server",
+      "Your backup password is never stored in plaintext; only a PBKDF2-derived key (100k iterations, SHA-256) is kept, itself encrypted with the master key",
+      "Even if your storage bucket (S3, MinIO, R2) is compromised, encrypted backups are unreadable without your password",
+      "We cannot recover your backup encryption password — zero-knowledge means zero access",
+      "Encrypted backups are transparently decrypted during 1-click restore; unencrypted backups continue to work unchanged",
+    ],
+  },
+  {
+    icon: Lock,
     title: "Credential Protection",
     color: "#00ff88",
     items: [
@@ -135,7 +147,7 @@ export default function SecurityPage() {
       {/* Trust bar */}
       <div className="mx-auto mb-16 max-w-3xl border-y border-white/[0.06] py-5">
         <div className="flex flex-wrap items-center justify-center gap-6 font-jetbrains text-xs text-slate-400">
-          {["AES-256-GCM at rest", "TLS in transit", "Zero credential logging", "Open source"].map((item) => (
+          {["Zero-knowledge backup encryption", "AES-256-GCM at rest", "TLS in transit", "Zero credential logging", "Open source"].map((item) => (
             <span key={item} className="flex items-center gap-1.5">
               <span className="text-[#00ff88]">✓</span> {item}
             </span>

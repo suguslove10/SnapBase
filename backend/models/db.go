@@ -175,6 +175,9 @@ func createTables(db *sql.DB) {
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
 		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id)`,
+		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS encryption_enabled BOOLEAN DEFAULT false`,
+		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS encryption_key_encrypted VARCHAR(500)`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS encrypted BOOLEAN DEFAULT false`,
 		`DO $$
 		BEGIN
 			INSERT INTO organizations (name, slug, owner_id)

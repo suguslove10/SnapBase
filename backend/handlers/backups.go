@@ -34,7 +34,8 @@ func (h *BackupHandler) List(c *gin.Context) {
 			b.schedule_id, b.status,
 			COALESCE(b.size_bytes, 0), COALESCE(b.storage_path, ''), COALESCE(b.error_message, ''),
 			b.started_at, b.completed_at,
-			b.restore_status, b.verified, COALESCE(b.verification_error, '')
+			b.restore_status, b.verified, COALESCE(b.verification_error, ''),
+			COALESCE(b.encrypted, false)
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE dc.user_id = $1
@@ -54,7 +55,7 @@ func (h *BackupHandler) List(c *gin.Context) {
 		var sizeBytes int64
 		var restoreStatus, verificationError sql.NullString
 		var verified sql.NullBool
-		if err := rows.Scan(&b.ID, &b.ConnectionID, &b.ConnectionName, &b.ConnectionType, &b.ConnectionHost, &b.ConnectionPort, &b.ConnectionDatabase, &b.ConnectionUsername, &scheduleID, &b.Status, &sizeBytes, &b.StoragePath, &b.ErrorMessage, &b.StartedAt, &b.CompletedAt, &restoreStatus, &verified, &verificationError); err != nil {
+		if err := rows.Scan(&b.ID, &b.ConnectionID, &b.ConnectionName, &b.ConnectionType, &b.ConnectionHost, &b.ConnectionPort, &b.ConnectionDatabase, &b.ConnectionUsername, &scheduleID, &b.Status, &sizeBytes, &b.StoragePath, &b.ErrorMessage, &b.StartedAt, &b.CompletedAt, &restoreStatus, &verified, &verificationError, &b.Encrypted); err != nil {
 			continue
 		}
 		if scheduleID.Valid {

@@ -24,9 +24,11 @@ type DBConnection struct {
 	Username          string    `json:"username"`
 	PasswordEncrypted string    `json:"-"`
 	Password          string    `json:"password,omitempty"` // only for input
-	RetentionDays     int       `json:"retention_days"`
-	StorageProviderID *int      `json:"storage_provider_id"`
-	CreatedAt         time.Time `json:"created_at"`
+	RetentionDays            int       `json:"retention_days"`
+	StorageProviderID        *int      `json:"storage_provider_id"`
+	EncryptionEnabled        bool      `json:"encryption_enabled"`
+	EncryptionKeyEncrypted   string    `json:"-"` // never returned to frontend
+	CreatedAt                time.Time `json:"created_at"`
 }
 
 type BackupJob struct {
@@ -47,6 +49,7 @@ type BackupJob struct {
 	CompletedAt         *time.Time `json:"completed_at"`
 	RestoreStatus       string     `json:"restore_status,omitempty"`
 	RestoredAt          *time.Time `json:"restored_at,omitempty"`
+	Encrypted           bool       `json:"encrypted"`
 	Verified            *bool      `json:"verified"`
 	VerifiedAt          *time.Time `json:"verified_at,omitempty"`
 	VerificationDetails string     `json:"verification_details,omitempty"`
