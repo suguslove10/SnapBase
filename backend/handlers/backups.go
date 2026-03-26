@@ -92,9 +92,9 @@ func (h *BackupHandler) Trigger(c *gin.Context) {
 	// Verify connection belongs to user
 	var conn models.DBConnection
 	err = h.DB.QueryRow(
-		"SELECT id, user_id, name, type, host, port, database_name, username, password_encrypted FROM db_connections WHERE id = $1 AND user_id = $2",
+		"SELECT id, user_id, name, type, host, port, database_name, username, password_encrypted, COALESCE(auth_source, 'admin') FROM db_connections WHERE id = $1 AND user_id = $2",
 		connID, userID,
-	).Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted)
+	).Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted, &conn.AuthSource)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
 		return

@@ -38,14 +38,15 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 	var storagePath, dbType, host, username, passwordEnc, dbName string
 	var port int
 	var isEncrypted bool
-	var encKeyEnc string
+	var encKeyEnc, authSource string
 	err := r.DB.QueryRow(`
 		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name,
-		       COALESCE(b.encrypted, false), COALESCE(dc.encryption_key_encrypted, '')
+		       COALESCE(b.encrypted, false), COALESCE(dc.encryption_key_encrypted, ''),
+		       COALESCE(dc.auth_source, 'admin')
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE b.id = $1 AND dc.user_id = $2 AND b.status = 'success'
-	`, backupID, userID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &isEncrypted, &encKeyEnc)
+	`, backupID, userID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &isEncrypted, &encKeyEnc, &authSource)
 	if err != nil {
 		send("error", "Backup not found or not eligible for restore")
 		return
@@ -173,9 +174,9 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 		send("log", fmt.Sprintf("Restoring MongoDB database %s...", dbName))
 		var mongoURI string
 		if strings.Contains(host, ".mongodb.net") {
-			mongoURI = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=admin", username, passwordEnc, host, dbName)
+			mongoURI = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=%s", username, passwordEnc, host, dbName, authSource)
 		} else {
-			mongoURI = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s", username, passwordEnc, host, port, dbName)
+			mongoURI = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s", username, passwordEnc, host, port, dbName, authSource)
 		}
 		cmd = exec.Command("mongorestore",
 			"--uri", mongoURI,

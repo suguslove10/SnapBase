@@ -76,7 +76,7 @@ export default function ConnectionsPage() {
   const [encSaving, setEncSaving] = useState(false);
   const [form, setForm] = useState({
     name: "", type: "postgres", host: "localhost", port: 5432,
-    database: "", username: "", password: "", retention_days: 30, storage_provider_id: "",
+    database: "", username: "", password: "", retention_days: 30, storage_provider_id: "", auth_source: "admin",
   });
 
   const fetchConnections = () => {
@@ -95,6 +95,8 @@ export default function ConnectionsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim()) { toast.error("Please fill in the connection name"); return; }
+    if (!form.database.trim()) { toast.error("Please fill in the database name"); return; }
     try {
       const payload = {
         ...form,
@@ -106,7 +108,7 @@ export default function ConnectionsPage() {
       await api.post("/connections", payload);
       toast.success("Connection created");
       setOpen(false);
-      setForm({ name: "", type: "postgres", host: "localhost", port: 5432, database: "", username: "", password: "", retention_days: 30, storage_provider_id: "" });
+      setForm({ name: "", type: "postgres", host: "localhost", port: 5432, database: "", username: "", password: "", retention_days: 30, storage_provider_id: "", auth_source: "admin" });
       fetchConnections();
     } catch {
       toast.error("Failed to create connection");
@@ -191,7 +193,7 @@ export default function ConnectionsPage() {
         {canManage && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <button
-              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)]"
+              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)] whitespace-nowrap"
               style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
             >
               <Plus className="h-4 w-4" />
@@ -218,7 +220,7 @@ export default function ConnectionsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Name</Label>
-                  <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
+                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Type</Label>
@@ -250,7 +252,7 @@ export default function ConnectionsPage() {
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
                     {isSqlite ? "File Path" : "Database"}
                   </Label>
-                  <Input required value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} />
+                  <Input value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} />
                 </div>
 
                 {!isSqlite && (
@@ -263,6 +265,20 @@ export default function ConnectionsPage() {
                       <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Password</Label>
                       <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} />
                     </div>
+                    {form.type === "mongodb" && (
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
+                          Auth Source <span className="normal-case text-slate-700">(optional)</span>
+                        </Label>
+                        <Input
+                          value={form.auth_source}
+                          onChange={(e) => setForm({ ...form, auth_source: e.target.value })}
+                          placeholder="admin"
+                          className={inputClass}
+                        />
+                        <p className="font-jetbrains text-[10px] text-slate-600">Leave as &apos;admin&apos; for MongoDB Atlas</p>
+                      </div>
+                    )}
                   </>
                 )}
 

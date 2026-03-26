@@ -95,6 +95,10 @@ export default function StoragePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim()) { toast.error("Please fill in the provider name"); return; }
+    if (!form.bucket.trim()) { toast.error("Please fill in the bucket name"); return; }
+    if (!form.access_key.trim()) { toast.error("Please fill in the access key"); return; }
+    if (!form.secret_key.trim()) { toast.error("Please fill in the secret key"); return; }
     try {
       await api.post("/storage-providers", form);
       toast.success("Storage provider added");
@@ -115,6 +119,8 @@ export default function StoragePage() {
 
   const handleUpdateKeys = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editKeys.access_key.trim()) { toast.error("Please fill in the access key"); return; }
+    if (!editKeys.secret_key.trim()) { toast.error("Please fill in the secret key"); return; }
     try {
       await api.patch(`/storage-providers/${editId}/keys`, editKeys);
       toast.success("Keys updated");
@@ -143,7 +149,7 @@ export default function StoragePage() {
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <button
-              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)]"
+              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)] whitespace-nowrap"
               style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
             >
               <Plus className="h-4 w-4" />Add Provider
@@ -160,7 +166,7 @@ export default function StoragePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Name</Label>
-                  <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} placeholder="My S3 Bucket" />
+                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} placeholder="My S3 Bucket" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Provider</Label>
@@ -190,15 +196,15 @@ export default function StoragePage() {
                 )}
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Bucket</Label>
-                  <Input required value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} className={inputClass} placeholder="my-backups" />
+                  <Input value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} className={inputClass} placeholder="my-backups" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Access Key</Label>
-                  <Input required value={form.access_key} onChange={(e) => setForm({ ...form, access_key: e.target.value })} className={inputClass} />
+                  <Input value={form.access_key} onChange={(e) => setForm({ ...form, access_key: e.target.value })} className={inputClass} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Secret Key</Label>
-                  <Input required type="password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className={inputClass} />
+                  <Input type="password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className={inputClass} />
                 </div>
                 <div className="col-span-2 flex items-center gap-3">
                   <Switch checked={form.use_ssl} onCheckedChange={(v) => setForm({ ...form, use_ssl: v })} />
@@ -329,12 +335,12 @@ export default function StoragePage() {
           <form onSubmit={handleUpdateKeys} className="space-y-4">
             <div className="space-y-1.5">
               <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Access Key</Label>
-              <Input required value={editKeys.access_key} onChange={(e) => setEditKeys({ ...editKeys, access_key: e.target.value })}
+              <Input value={editKeys.access_key} onChange={(e) => setEditKeys({ ...editKeys, access_key: e.target.value })}
                 className={inputClass} placeholder="AKIA…" />
             </div>
             <div className="space-y-1.5">
               <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Secret Key</Label>
-              <Input required type="password" value={editKeys.secret_key} onChange={(e) => setEditKeys({ ...editKeys, secret_key: e.target.value })}
+              <Input type="password" value={editKeys.secret_key} onChange={(e) => setEditKeys({ ...editKeys, secret_key: e.target.value })}
                 className={inputClass} />
             </div>
             <div className="flex justify-end gap-2">

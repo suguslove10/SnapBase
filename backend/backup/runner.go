@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -125,7 +126,7 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	}
 	defer file.Close()
 
-	err = connStorage.Upload(storagePath, file, info.Size())
+	err = storage.UploadWithRetry(connStorage, storagePath, file, info.Size(), 3)
 	if err != nil {
 		r.failJob(jobID, "Failed to upload backup: "+err.Error())
 		r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
@@ -219,14 +220,18 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		)
 
 	case "mongodb":
+		authSource := "admin"
+		if conn.AuthSource != "" {
+			authSource = conn.AuthSource
+		}
 		var uri string
 		// MongoDB Atlas uses SRV records (.mongodb.net) — must use mongodb+srv:// without port
 		if strings.Contains(conn.Host, ".mongodb.net") {
-			uri = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=admin",
-				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Database)
+			uri = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=%s",
+				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Database, authSource)
 		} else {
-			uri = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s",
-				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Port, conn.Database)
+			uri = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s",
+				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Port, conn.Database, authSource)
 		}
 		cmd = exec.Command("mongodump",
 			"--uri", uri,
@@ -326,13 +331,10 @@ func resolveStorage(db *sql.DB, cfg *config.Config, connID int, userID int) (sto
 // decryptProviderSecret decrypts a storage provider secret key using the JWT secret as AES key.
 // Falls back to returning the raw value if decryption fails (e.g. seeded MinIO plain-text).
 func decryptProviderSecret(encrypted, jwtSecret string) string {
-	key := []byte(jwtSecret)
-	if len(key) > 32 {
-		key = key[:32]
-	}
-	for len(key) < 32 {
-		key = append(key, 0)
-	}
+	// Use SHA-256 of the JWT secret so we always have exactly 32 bytes of strong entropy,
+	// regardless of the JWT secret's length. Zero-padding was removed as it weakens the key.
+	h := sha256.Sum256([]byte(jwtSecret))
+	key := h[:]
 	data, err := hex.DecodeString(encrypted)
 	if err != nil {
 		return encrypted

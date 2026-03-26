@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
+import { toast } from "sonner";
 import { Users, UserPlus, Trash2, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,6 +73,7 @@ export default function TeamPage() {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!inviteEmail.trim()) { toast.error("Please fill in the email address"); return; }
     setInviteError("");
     setInviteSuccess("");
     setInviteLoading(true);
@@ -144,7 +146,6 @@ export default function TeamPage() {
                 <Label className="text-xs font-medium text-slate-400">Email address</Label>
                 <Input
                   type="email"
-                  required
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="colleague@example.com"
@@ -169,7 +170,7 @@ export default function TeamPage() {
               <button
                 type="submit"
                 disabled={inviteLoading}
-                className="rounded-xl px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 disabled:opacity-50"
+                className="rounded-xl px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 disabled:opacity-50 whitespace-nowrap"
                 style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
               >
                 {inviteLoading ? "Sending…" : "Send Invite"}

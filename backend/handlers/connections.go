@@ -26,12 +26,12 @@ func (h *ConnectionHandler) List(c *gin.Context) {
 	var err error
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		rows, err = h.DB.Query(
-			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, COALESCE(encryption_enabled, false), created_at FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2) ORDER BY created_at DESC",
+			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, COALESCE(encryption_enabled, false), COALESCE(auth_source, 'admin'), created_at FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2) ORDER BY created_at DESC",
 			orgIDRaw, userID,
 		)
 	} else {
 		rows, err = h.DB.Query(
-			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, COALESCE(encryption_enabled, false), created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
+			"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(retention_days, 30), storage_provider_id, COALESCE(encryption_enabled, false), COALESCE(auth_source, 'admin'), created_at FROM db_connections WHERE user_id = $1 ORDER BY created_at DESC",
 			userID,
 		)
 	}
@@ -45,7 +45,7 @@ func (h *ConnectionHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var conn models.DBConnection
 		var spID sql.NullInt64
-		if err := rows.Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.RetentionDays, &spID, &conn.EncryptionEnabled, &conn.CreatedAt); err != nil {
+		if err := rows.Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.RetentionDays, &spID, &conn.EncryptionEnabled, &conn.AuthSource, &conn.CreatedAt); err != nil {
 			continue
 		}
 		if spID.Valid {
@@ -97,15 +97,19 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 	}
 
 	var id int
+	authSource := req.AuthSource
+	if authSource == "" {
+		authSource = "admin"
+	}
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		err = h.DB.QueryRow(
-			"INSERT INTO db_connections (user_id, org_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
-			userID, orgIDRaw, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID,
+			"INSERT INTO db_connections (user_id, org_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id, auth_source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+			userID, orgIDRaw, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID, authSource,
 		).Scan(&id)
 	} else {
 		err = h.DB.QueryRow(
-			"INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
-			userID, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID,
+			"INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, retention_days, storage_provider_id, auth_source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+			userID, req.Name, req.Type, req.Host, req.Port, req.Database, req.Username, encPassword, retentionDays, req.StorageProviderID, authSource,
 		).Scan(&id)
 	}
 	if err != nil {

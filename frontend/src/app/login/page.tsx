@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import api from "@/lib/api";
 
 function LoginForm() {
@@ -34,6 +35,8 @@ function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim()) { toast.error("Please fill in your email"); return; }
+    if (!password) { toast.error("Please fill in your password"); return; }
     setError("");
     setLoading(true);
     try {
@@ -138,7 +141,6 @@ function LoginForm() {
               <Label className="text-xs font-medium text-slate-400">Email</Label>
               <Input
                 type="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
@@ -149,7 +151,6 @@ function LoginForm() {
               <Label className="text-xs font-medium text-slate-400">Password</Label>
               <Input
                 type="password"
-                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"

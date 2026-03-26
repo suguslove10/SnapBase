@@ -180,7 +180,7 @@ export default function LandingPage() {
         <div className="mt-10 flex flex-wrap justify-center gap-4">
           <Link
             href="/login"
-            className="rounded-xl px-8 py-3.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.4)]"
+            className="rounded-xl px-8 py-3.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.4)] whitespace-nowrap"
             style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
           >
             Get Started Free
@@ -301,7 +301,7 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link
               href="/login"
-              className="rounded-xl px-8 py-3.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.4)]"
+              className="rounded-xl px-8 py-3.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.4)] whitespace-nowrap"
               style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
             >
               Get Started Free

@@ -178,6 +178,7 @@ func createTables(db *sql.DB) {
 		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS encryption_enabled BOOLEAN DEFAULT false`,
 		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS encryption_key_encrypted VARCHAR(500)`,
 		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS encrypted BOOLEAN DEFAULT false`,
+		`ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS auth_source VARCHAR(50) DEFAULT 'admin'`,
 		`DO $$
 		BEGIN
 			INSERT INTO organizations (name, slug, owner_id)

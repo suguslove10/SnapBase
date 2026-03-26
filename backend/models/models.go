@@ -28,6 +28,7 @@ type DBConnection struct {
 	StorageProviderID        *int      `json:"storage_provider_id"`
 	EncryptionEnabled        bool      `json:"encryption_enabled"`
 	EncryptionKeyEncrypted   string    `json:"-"` // never returned to frontend
+	AuthSource               string    `json:"auth_source,omitempty"`
 	CreatedAt                time.Time `json:"created_at"`
 }
 
@@ -87,6 +88,7 @@ type CreateConnectionRequest struct {
 	Password          string `json:"password"`
 	RetentionDays     int    `json:"retention_days"`
 	StorageProviderID *int   `json:"storage_provider_id"`
+	AuthSource        string `json:"auth_source"`
 }
 
 type CreateScheduleRequest struct {

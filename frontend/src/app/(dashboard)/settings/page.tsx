@@ -112,6 +112,8 @@ export default function SettingsPage() {
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentPassword) { toast.error("Please fill in your current password"); return; }
+    if (!newPassword) { toast.error("Please fill in your new password"); return; }
     if (newPassword !== confirmPassword) { toast.error("Passwords do not match"); return; }
     if (newPassword.length < 6) { toast.error("Password must be at least 6 characters"); return; }
     setSavingPassword(true);
@@ -206,16 +208,16 @@ export default function SettingsPage() {
           <form onSubmit={handlePasswordChange} className="max-w-md space-y-4">
             <div className="space-y-1.5">
               <FieldLabel>Current Password</FieldLabel>
-              <Input type="password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputClass} />
+              <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputClass} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <FieldLabel>New Password</FieldLabel>
-                <Input type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} />
+                <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} />
               </div>
               <div className="space-y-1.5">
                 <FieldLabel>Confirm Password</FieldLabel>
-                <Input type="password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
+                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
               </div>
             </div>
             <PrimaryBtn disabled={savingPassword}>{savingPassword ? "Saving…" : "Update Password"}</PrimaryBtn>
