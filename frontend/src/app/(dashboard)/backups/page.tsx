@@ -353,9 +353,13 @@ export default function BackupHistoryPage() {
                           </button>
                         </div>
                       ) : backup.status === "failed" ? (
-                        <span className="font-jetbrains text-[10px] text-red-400/70" title={backup.error_message}>
-                          {backup.error_message?.substring(0, 28)}
-                        </span>
+                        <button
+                          className="max-w-[200px] truncate font-jetbrains text-[10px] text-red-400/70 hover:text-red-300 text-left"
+                          title={backup.error_message}
+                          onClick={() => backup.error_message && toast.error(backup.error_message, { duration: 10000 })}
+                        >
+                          {backup.error_message || "Unknown error"}
+                        </button>
                       ) : <span className="text-slate-700">—</span>}
                     </td>
                   </tr>
