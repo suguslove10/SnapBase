@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/suguslove10/snapbase/config"
+	"github.com/suguslove10/snapbase/crypto"
 	"github.com/suguslove10/snapbase/storage"
 )
 
@@ -34,12 +35,15 @@ func (v *Verifier) VerifyBackup(backupID int) {
 	// Get backup info
 	var storagePath, dbType, host, username, passwordEnc, dbName string
 	var port, connID, userID int
+	var isEncrypted bool
+	var encKeyEnc string
 	err := v.DB.QueryRow(`
-		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name, dc.id, dc.user_id
+		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name, dc.id, dc.user_id,
+		       COALESCE(b.encrypted, false), COALESCE(dc.encryption_key_encrypted, '')
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE b.id = $1 AND b.status = 'success'
-	`, backupID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &connID, &userID)
+	`, backupID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &connID, &userID, &isEncrypted, &encKeyEnc)
 	if err != nil {
 		v.markFailed(backupID, "Backup not found or not successful")
 		return
@@ -72,6 +76,26 @@ func (v *Verifier) VerifyBackup(backupID int) {
 	}
 	io.Copy(f, obj)
 	f.Close()
+
+	// Decrypt if backup was encrypted
+	if isEncrypted && encKeyEnc != "" {
+		plainKey, err := crypto.Decrypt(encKeyEnc)
+		if err != nil {
+			v.markFailed(backupID, "Failed to decrypt backup encryption key during verification")
+			return
+		}
+		decryptedGz := tmpGz + ".dec"
+		defer os.Remove(decryptedGz)
+		if err := crypto.DecryptFile(tmpGz, decryptedGz, plainKey); err != nil {
+			v.markFailed(backupID, fmt.Sprintf("Failed to decrypt backup during verification: %v", err))
+			return
+		}
+		os.Remove(tmpGz)
+		if err := os.Rename(decryptedGz, tmpGz); err != nil {
+			v.markFailed(backupID, fmt.Sprintf("Failed to stage decrypted file: %v", err))
+			return
+		}
+	}
 
 	// Decompress
 	gzFile, err := os.Open(tmpGz)
