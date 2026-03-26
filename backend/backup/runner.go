@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -329,12 +328,18 @@ func resolveStorage(db *sql.DB, cfg *config.Config, connID int, userID int) (sto
 }
 
 // decryptProviderSecret decrypts a storage provider secret key using the JWT secret as AES key.
+// MUST use zero-padding (first 32 bytes of JWT secret, padded with 0x00) to match
+// encryptSecret in handlers/storage_providers.go which uses the same deriveKey method.
 // Falls back to returning the raw value if decryption fails (e.g. seeded MinIO plain-text).
 func decryptProviderSecret(encrypted, jwtSecret string) string {
-	// Use SHA-256 of the JWT secret so we always have exactly 32 bytes of strong entropy,
-	// regardless of the JWT secret's length. Zero-padding was removed as it weakens the key.
-	h := sha256.Sum256([]byte(jwtSecret))
-	key := h[:]
+	// Derive key using the same method as encryptSecret in storage_providers.go
+	key := []byte(jwtSecret)
+	if len(key) > 32 {
+		key = key[:32]
+	}
+	for len(key) < 32 {
+		key = append(key, 0)
+	}
 	data, err := hex.DecodeString(encrypted)
 	if err != nil {
 		return encrypted
