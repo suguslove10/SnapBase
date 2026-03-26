@@ -34,6 +34,10 @@ type BackupJob struct {
 	ConnectionID        int        `json:"connection_id"`
 	ConnectionName      string     `json:"connection_name,omitempty"`
 	ConnectionType      string     `json:"connection_type,omitempty"`
+	ConnectionHost      string     `json:"connection_host,omitempty"`
+	ConnectionPort      int        `json:"connection_port,omitempty"`
+	ConnectionDatabase  string     `json:"connection_database,omitempty"`
+	ConnectionUsername  string     `json:"connection_username,omitempty"`
 	ScheduleID          *int       `json:"schedule_id"`
 	Status              string     `json:"status"` // pending, running, success, failed
 	SizeBytes           *int64     `json:"size_bytes"`

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, RefreshCw, History, RotateCcw } from "lucide-react";
+import { Download, RefreshCw, History, RotateCcw, Terminal, Zap, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
@@ -11,6 +11,10 @@ interface Backup {
   id: number;
   connection_name: string;
   connection_type: string;
+  connection_host: string;
+  connection_port: number;
+  connection_database: string;
+  connection_username: string;
   status: string;
   size_bytes: number | null;
   error_message: string;
@@ -84,6 +88,80 @@ function VerifiedBadge({ backup, onClickError }: { backup: Backup; onClickError:
   return <span className="font-jetbrains text-[11px] text-slate-700">—</span>;
 }
 
+function buildCliCommands(backup: Backup): { label: string; commands: string }[] {
+  const h = backup.connection_host || "<HOST>";
+  const p = backup.connection_port || "<PORT>";
+  const db = backup.connection_database || "<DATABASE>";
+  const u = backup.connection_username || "<USER>";
+
+  switch (backup.connection_type) {
+    case "postgres":
+      return [
+        {
+          label: "1. Download the backup file",
+          commands: `# Using the Download button above, or via curl:\ncurl -H "Authorization: Bearer <TOKEN>" \\\n  "${process.env.NEXT_PUBLIC_API_URL || "https://api.getsnapbase.com/api"}/backups/${backup.id}/download" \\\n  -o backup.sql.gz`,
+        },
+        {
+          label: "2. Decompress",
+          commands: `gunzip backup.sql.gz`,
+        },
+        {
+          label: "3. Restore with pg_restore",
+          commands: `pg_restore \\\n  -h ${h} \\\n  -p ${p} \\\n  -U ${u} \\\n  -d ${db} \\\n  --no-owner --no-acl \\\n  backup.sql`,
+        },
+      ];
+    case "mysql":
+      return [
+        {
+          label: "1. Download the backup file",
+          commands: `curl -H "Authorization: Bearer <TOKEN>" \\\n  "${process.env.NEXT_PUBLIC_API_URL || "https://api.getsnapbase.com/api"}/backups/${backup.id}/download" \\\n  -o backup.sql.gz`,
+        },
+        {
+          label: "2. Decompress & restore",
+          commands: `gunzip -c backup.sql.gz | mysql \\\n  -h ${h} \\\n  -P ${p} \\\n  -u ${u} \\\n  -p \\\n  ${db}`,
+        },
+      ];
+    case "mongodb":
+      return [
+        {
+          label: "1. Download the backup file",
+          commands: `curl -H "Authorization: Bearer <TOKEN>" \\\n  "${process.env.NEXT_PUBLIC_API_URL || "https://api.getsnapbase.com/api"}/backups/${backup.id}/download" \\\n  -o backup.gz`,
+        },
+        {
+          label: "2. Restore with mongorestore",
+          commands: `mongorestore \\\n  --uri="mongodb://${u}:<PASS>@${h}:${p}/${db}" \\\n  --archive=backup.gz \\\n  --gzip \\\n  --drop`,
+        },
+      ];
+    default:
+      return [
+        {
+          label: "Download",
+          commands: `# Download via the Download button, then restore manually.`,
+        },
+      ];
+  }
+}
+
+function CodeBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="group relative rounded-xl bg-black/60 p-4">
+      <pre className="overflow-x-auto font-jetbrains text-xs leading-relaxed text-[#00ff88] whitespace-pre-wrap break-all">{code}</pre>
+      <button
+        onClick={copy}
+        className="absolute right-3 top-3 rounded-lg p-1 text-slate-600 opacity-0 transition hover:text-slate-300 group-hover:opacity-100"
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-[#00ff88]" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
 const tableCardStyle = {
   background: "rgba(13,21,38,0.8)",
   backdropFilter: "blur(12px)",
@@ -102,6 +180,7 @@ export default function BackupHistoryPage() {
   const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
+  const [restoreTab, setRestoreTab] = useState<"auto" | "cli">("auto");
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -172,8 +251,12 @@ export default function BackupHistoryPage() {
   };
 
   const openRestoreModal = (backup: Backup) => {
-    setRestoreTarget(backup); setConfirmed(false);
-    setLogs([]); setRestoreComplete(null); setRestoring(false);
+    setRestoreTarget(backup);
+    setRestoreTab("auto");
+    setConfirmed(false);
+    setLogs([]);
+    setRestoreComplete(null);
+    setRestoring(false);
   };
 
   const statusBorderColor: Record<string, string> = {
@@ -243,14 +326,21 @@ export default function BackupHistoryPage() {
                     <td className="px-4 py-3"><VerifiedBadge backup={backup} onClickError={setVerifyError} /></td>
                     <td className="px-4 py-3">
                       {backup.status === "success" ? (
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => handleDownload(backup.id)}
-                            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-white" title="Download">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDownload(backup.id)}
+                            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                            title="Download"
+                          >
                             <Download className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => openRestoreModal(backup)}
-                            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-amber-500/10 hover:text-amber-400" title="Restore">
-                            <RotateCcw className="h-3.5 w-3.5" />
+                          <button
+                            onClick={() => openRestoreModal(backup)}
+                            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                            style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(239,68,68,0.15))", border: "1px solid rgba(245,158,11,0.3)", color: "#fbbf24" }}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Restore
                           </button>
                         </div>
                       ) : backup.status === "failed" ? (
@@ -285,19 +375,47 @@ export default function BackupHistoryPage() {
 
       {/* Restore Modal */}
       <Dialog open={!!restoreTarget} onOpenChange={(open) => { if (!open && !restoring) setRestoreTarget(null); }}>
-        <DialogContent className="max-w-lg text-white" style={dialogStyle}>
+        <DialogContent className="max-w-xl text-white" style={dialogStyle}>
           <DialogHeader>
             <DialogTitle className="font-grotesk text-base font-semibold text-white">
-              {restoring || logs.length > 0 ? "Restore Progress" : "Confirm Restore"}
+              Restore — {restoreTarget?.connection_name}
             </DialogTitle>
+            <p className="text-xs text-slate-500">{formatDate(restoreTarget?.started_at || null)}</p>
           </DialogHeader>
 
-          {!restoring && logs.length === 0 ? (
+          {/* Tabs — only show when not mid-restore */}
+          {!restoring && logs.length === 0 && (
+            <div className="flex gap-1 rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
+              <button
+                onClick={() => setRestoreTab("auto")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition ${restoreTab === "auto" ? "text-white" : "text-slate-500 hover:text-slate-300"}`}
+                style={restoreTab === "auto" ? { background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.25)" } : undefined}
+              >
+                <Zap className="h-3.5 w-3.5" />
+                1-Click Restore
+              </button>
+              <button
+                onClick={() => setRestoreTab("cli")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition ${restoreTab === "cli" ? "text-white" : "text-slate-500 hover:text-slate-300"}`}
+                style={restoreTab === "cli" ? { background: "rgba(0,180,255,0.10)", border: "1px solid rgba(0,180,255,0.20)" } : undefined}
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                CLI Commands
+              </button>
+            </div>
+          )}
+
+          {/* 1-Click Restore tab */}
+          {restoreTab === "auto" && !restoring && logs.length === 0 && (
             <div className="space-y-4">
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-                <p className="text-sm font-medium text-amber-300">This will overwrite your database.</p>
+                <p className="text-sm font-medium text-amber-300">This will overwrite your live database.</p>
                 <p className="mt-1 font-jetbrains text-xs text-amber-400/70">
-                  Restoring &ldquo;{restoreTarget?.connection_name}&rdquo; from {formatDate(restoreTarget?.started_at || null)}.
+                  SnapBase will download the backup and run {
+                    restoreTarget?.connection_type === "postgres" ? "pg_restore" :
+                    restoreTarget?.connection_type === "mysql" ? "mysql" :
+                    restoreTarget?.connection_type === "mongodb" ? "mongorestore" : "restore"
+                  } directly against <strong className="text-amber-300">{restoreTarget?.connection_database || restoreTarget?.connection_name}</strong>.
                 </p>
               </div>
               <label className="flex cursor-pointer items-start gap-2">
@@ -311,13 +429,40 @@ export default function BackupHistoryPage() {
                   Cancel
                 </button>
                 <button disabled={!confirmed} onClick={handleRestore}
-                  className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 disabled:opacity-40"
-                  style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)" }}>
+                  className="flex items-center gap-1.5 rounded-xl px-5 py-2 text-sm font-semibold transition hover:opacity-90 disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "#0a0f1e" }}>
                   <RotateCcw className="h-3.5 w-3.5" />Restore Now
                 </button>
               </div>
             </div>
-          ) : (
+          )}
+
+          {/* CLI Commands tab */}
+          {restoreTab === "cli" && !restoring && logs.length === 0 && restoreTarget && (
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              <p className="text-xs text-slate-400">
+                Run these commands on any machine with the database CLI tools installed.
+              </p>
+              {buildCliCommands(restoreTarget).map((step) => (
+                <div key={step.label} className="space-y-1.5">
+                  <p className="font-jetbrains text-[10px] uppercase tracking-wider text-slate-500">{step.label}</p>
+                  <CodeBlock code={step.commands} />
+                </div>
+              ))}
+              <div className="rounded-xl border border-[#00b4ff]/10 bg-[#00b4ff]/5 p-3 text-xs text-slate-400">
+                Replace <code className="font-jetbrains text-[#00b4ff]">&lt;TOKEN&gt;</code> with your JWT from localStorage, and <code className="font-jetbrains text-[#00b4ff]">&lt;PASS&gt;</code> with your database password from Settings → Connections.
+              </div>
+              <div className="flex justify-end">
+                <button onClick={() => setRestoreTarget(null)}
+                  className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white">
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Live restore log */}
+          {(restoring || logs.length > 0) && (
             <div className="space-y-3">
               <div ref={logRef} className="h-64 overflow-y-auto rounded-xl bg-black p-4 font-jetbrains text-xs leading-relaxed">
                 {logs.map((log, i) => (

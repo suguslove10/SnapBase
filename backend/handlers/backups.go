@@ -29,7 +29,9 @@ type BackupHandler struct {
 func (h *BackupHandler) List(c *gin.Context) {
 	userID := c.GetInt("user_id")
 	rows, err := h.DB.Query(`
-		SELECT b.id, b.connection_id, dc.name, dc.type, b.schedule_id, b.status,
+		SELECT b.id, b.connection_id, dc.name, dc.type,
+			COALESCE(dc.host, ''), COALESCE(dc.port, 0), dc.database_name, COALESCE(dc.username, ''),
+			b.schedule_id, b.status,
 			COALESCE(b.size_bytes, 0), COALESCE(b.storage_path, ''), COALESCE(b.error_message, ''),
 			b.started_at, b.completed_at,
 			b.restore_status, b.verified, COALESCE(b.verification_error, '')
@@ -52,7 +54,7 @@ func (h *BackupHandler) List(c *gin.Context) {
 		var sizeBytes int64
 		var restoreStatus, verificationError sql.NullString
 		var verified sql.NullBool
-		if err := rows.Scan(&b.ID, &b.ConnectionID, &b.ConnectionName, &b.ConnectionType, &scheduleID, &b.Status, &sizeBytes, &b.StoragePath, &b.ErrorMessage, &b.StartedAt, &b.CompletedAt, &restoreStatus, &verified, &verificationError); err != nil {
+		if err := rows.Scan(&b.ID, &b.ConnectionID, &b.ConnectionName, &b.ConnectionType, &b.ConnectionHost, &b.ConnectionPort, &b.ConnectionDatabase, &b.ConnectionUsername, &scheduleID, &b.Status, &sizeBytes, &b.StoragePath, &b.ErrorMessage, &b.StartedAt, &b.CompletedAt, &restoreStatus, &verified, &verificationError); err != nil {
 			continue
 		}
 		if scheduleID.Valid {
