@@ -345,6 +345,10 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 		return
 	}
 
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "backup.restored", "backup", backupID, map[string]interface{}{"backup_id": backupID}, c.ClientIP())
+	}
+
 	events := make(chan backup.RestoreEvent, 100)
 	go h.RestoreRunner.Restore(backupID, userID, events)
 

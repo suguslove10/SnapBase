@@ -13,14 +13,15 @@ type AuditHandler struct {
 }
 
 type AuditLogEntry struct {
-	ID         int    `json:"id"`
-	UserID     int    `json:"user_id"`
-	Action     string `json:"action"`
-	Resource   string `json:"resource"`
-	ResourceID int    `json:"resource_id"`
-	Metadata   string `json:"metadata"`
-	IPAddress  string `json:"ip_address"`
-	CreatedAt  string `json:"created_at"`
+	ID          int    `json:"id"`
+	UserID      int    `json:"user_id"`
+	UserEmail   string `json:"user_email"`
+	Action      string `json:"action"`
+	Resource    string `json:"resource"`
+	ResourceID  int    `json:"resource_id"`
+	Metadata    string `json:"metadata"`
+	IPAddress   string `json:"ip_address"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func (h *AuditHandler) List(c *gin.Context) {
@@ -31,23 +32,49 @@ func (h *AuditHandler) List(c *gin.Context) {
 
 	actionFilter := c.Query("action")
 
+	// For org owners/admins, show all member activity in their org
+	orgIDRaw, hasOrg := c.Get("org_id")
+
+	baseSelect := `
+		SELECT al.id, al.user_id, COALESCE(u.email, 'unknown') as user_email,
+			al.action, COALESCE(al.resource, ''), COALESCE(al.resource_id, 0),
+			COALESCE(al.metadata::text, '{}'), COALESCE(al.ip_address, ''),
+			al.created_at
+		FROM audit_logs al
+		LEFT JOIN users u ON u.id = al.user_id`
+
 	var rows *sql.Rows
 	var err error
 
-	if actionFilter != "" {
-		rows, err = h.DB.Query(`
-			SELECT id, user_id, action, COALESCE(resource, ''), COALESCE(resource_id, 0),
-				COALESCE(metadata::text, '{}'), COALESCE(ip_address, ''), created_at
-			FROM audit_logs WHERE user_id = $1 AND action LIKE $2
-			ORDER BY created_at DESC LIMIT $3 OFFSET $4
-		`, userID, actionFilter+"%", limit, offset)
+	if hasOrg {
+		// Show all activity from org members
+		if actionFilter != "" {
+			rows, err = h.DB.Query(baseSelect+`
+				WHERE al.user_id IN (
+					SELECT user_id FROM org_members WHERE org_id = $1
+				) AND al.action LIKE $2
+				ORDER BY al.created_at DESC LIMIT $3 OFFSET $4
+			`, orgIDRaw, actionFilter+"%", limit, offset)
+		} else {
+			rows, err = h.DB.Query(baseSelect+`
+				WHERE al.user_id IN (
+					SELECT user_id FROM org_members WHERE org_id = $1
+				)
+				ORDER BY al.created_at DESC LIMIT $2 OFFSET $3
+			`, orgIDRaw, limit, offset)
+		}
 	} else {
-		rows, err = h.DB.Query(`
-			SELECT id, user_id, action, COALESCE(resource, ''), COALESCE(resource_id, 0),
-				COALESCE(metadata::text, '{}'), COALESCE(ip_address, ''), created_at
-			FROM audit_logs WHERE user_id = $1
-			ORDER BY created_at DESC LIMIT $2 OFFSET $3
-		`, userID, limit, offset)
+		if actionFilter != "" {
+			rows, err = h.DB.Query(baseSelect+`
+				WHERE al.user_id = $1 AND al.action LIKE $2
+				ORDER BY al.created_at DESC LIMIT $3 OFFSET $4
+			`, userID, actionFilter+"%", limit, offset)
+		} else {
+			rows, err = h.DB.Query(baseSelect+`
+				WHERE al.user_id = $1
+				ORDER BY al.created_at DESC LIMIT $2 OFFSET $3
+			`, userID, limit, offset)
+		}
 	}
 
 	if err != nil {
@@ -59,8 +86,12 @@ func (h *AuditHandler) List(c *gin.Context) {
 	var logs []AuditLogEntry
 	for rows.Next() {
 		var l AuditLogEntry
-		if err := rows.Scan(&l.ID, &l.UserID, &l.Action, &l.Resource, &l.ResourceID, &l.Metadata, &l.IPAddress, &l.CreatedAt); err != nil {
+		var createdAt sql.NullString
+		if err := rows.Scan(&l.ID, &l.UserID, &l.UserEmail, &l.Action, &l.Resource, &l.ResourceID, &l.Metadata, &l.IPAddress, &createdAt); err != nil {
 			continue
+		}
+		if createdAt.Valid {
+			l.CreatedAt = createdAt.String
 		}
 		logs = append(logs, l)
 	}
@@ -69,7 +100,11 @@ func (h *AuditHandler) List(c *gin.Context) {
 	}
 
 	var total int
-	h.DB.QueryRow("SELECT COUNT(*) FROM audit_logs WHERE user_id = $1", userID).Scan(&total)
+	if hasOrg {
+		h.DB.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE user_id IN (SELECT user_id FROM org_members WHERE org_id = $1)`, orgIDRaw).Scan(&total)
+	} else {
+		h.DB.QueryRow("SELECT COUNT(*) FROM audit_logs WHERE user_id = $1", userID).Scan(&total)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"logs":  logs,

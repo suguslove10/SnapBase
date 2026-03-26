@@ -17,7 +17,8 @@ import (
 
 
 type ConnectionHandler struct {
-	DB *sql.DB
+	DB          *sql.DB
+	AuditLogger interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
 }
 
 // connAccessClause returns a SQL WHERE fragment and args to check that a connection
@@ -142,6 +143,9 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "connection.created", "connection", id, map[string]interface{}{"name": req.Name, "type": req.Type, "host": req.Host, "database": req.Database}, c.ClientIP())
+	}
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Connection created"})
 }
 
@@ -163,6 +167,9 @@ func (h *ConnectionHandler) Delete(c *gin.Context) {
 	if rows == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
 		return
+	}
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "connection.deleted", "connection", id, map[string]interface{}{"id": id}, c.ClientIP())
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Connection deleted"})
 }
@@ -381,6 +388,9 @@ func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disable encryption"})
 			return
 		}
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogAction(userID, "encryption.disabled", "connection", id, map[string]interface{}{"id": id}, c.ClientIP())
+		}
 		c.JSON(http.StatusOK, gin.H{"message": "Encryption disabled"})
 		return
 	}
@@ -413,6 +423,9 @@ func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enable encryption"})
 		return
+	}
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "encryption.enabled", "connection", id, map[string]interface{}{"id": id}, c.ClientIP())
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Encryption enabled"})
 }

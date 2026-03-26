@@ -86,7 +86,7 @@ export default function SettingsPage() {
   const [reportFrom, setReportFrom] = useState("");
   const [reportTo, setReportTo] = useState("");
   const [generatingReport, setGeneratingReport] = useState(false);
-  const [auditLogs, setAuditLogs] = useState<{ id: number; action: string; resource: string; ip_address: string; created_at: string }[]>([]);
+  const [auditLogs, setAuditLogs] = useState<{ id: number; user_id: number; user_email: string; action: string; resource: string; resource_id: number; metadata: string; ip_address: string; created_at: string }[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
   const [storageInfo, setStorageInfo] = useState<{ total_backups: number; storage_used: number; minio_endpoint: string; bucket: string } | null>(null);
   const [userEmail, setUserEmail] = useState("");
@@ -183,11 +183,33 @@ export default function SettingsPage() {
   };
 
   const auditActionColor = (action: string) => {
-    if (action.includes("login")) return { bg: "rgba(0,180,255,0.10)", color: "#00b4ff" };
-    if (action.includes("backup")) return { bg: "rgba(0,255,136,0.10)", color: "#00ff88" };
-    if (action.includes("connection")) return { bg: "rgba(0,180,255,0.08)", color: "#38bdf8" };
+    if (action.includes("login") || action.includes("registered")) return { bg: "rgba(0,180,255,0.10)", color: "#00b4ff" };
+    if (action.includes("backup.triggered")) return { bg: "rgba(0,255,136,0.10)", color: "#00ff88" };
+    if (action.includes("backup.restored")) return { bg: "rgba(245,158,11,0.12)", color: "#fbbf24" };
+    if (action.includes("connection.created")) return { bg: "rgba(56,189,248,0.10)", color: "#38bdf8" };
+    if (action.includes("connection.deleted")) return { bg: "rgba(248,113,113,0.10)", color: "#f87171" };
     if (action.includes("schedule")) return { bg: "rgba(167,139,250,0.10)", color: "#a78bfa" };
+    if (action.includes("encryption")) return { bg: "rgba(0,245,212,0.10)", color: "#00f5d4" };
     return { bg: "rgba(255,255,255,0.05)", color: "#64748b" };
+  };
+
+  const auditDetail = (log: { action: string; resource: string; resource_id: number; metadata: string }) => {
+    try {
+      const meta = JSON.parse(log.metadata || "{}");
+      if (log.action === "backup.triggered") return meta.name ? `Backup of "${meta.name}"` : "Manual backup triggered";
+      if (log.action === "backup.restored") return `Restore of backup #${meta.backup_id || log.resource_id}`;
+      if (log.action === "connection.created") return `"${meta.name}" (${meta.type}) — ${meta.host}/${meta.database}`;
+      if (log.action === "connection.deleted") return `Connection #${meta.id || log.resource_id} deleted`;
+      if (log.action === "schedule.created") return `Cron: ${meta.cron} on connection #${meta.connection_id}`;
+      if (log.action === "schedule.deleted") return `Schedule #${meta.id || log.resource_id} deleted`;
+      if (log.action === "encryption.enabled") return `Encryption enabled on connection #${log.resource_id}`;
+      if (log.action === "encryption.disabled") return `Encryption disabled on connection #${log.resource_id}`;
+      if (log.action === "user.oauth_login") return `OAuth via ${meta.provider || "unknown provider"}`;
+      if (log.action === "user.login") return "Password login";
+      if (log.action === "user.registered") return "Account created";
+      if (meta.name) return meta.name;
+    } catch { /* ignore */ }
+    return log.resource || "—";
   };
 
   return (
@@ -333,23 +355,34 @@ export default function SettingsPage() {
           ) : auditLogs.length === 0 ? (
             <div className="p-6 text-sm text-slate-600">No audit events yet.</div>
           ) : (
-            auditLogs.slice(0, 20).map((log) => {
+            auditLogs.slice(0, 50).map((log) => {
               const { bg, color } = auditActionColor(log.action);
+              const detail = auditDetail(log);
               return (
-                <div key={log.id} className="flex items-center gap-4 px-6 py-3 transition hover:bg-white/[0.02]">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="rounded-lg px-1.5 py-0.5 font-jetbrains text-[10px] font-semibold uppercase tracking-wider"
-                        style={{ background: bg, color }}
-                      >
-                        {log.action}
-                      </span>
-                      {log.resource && <span className="font-jetbrains text-[11px] text-slate-500">{log.resource}</span>}
-                    </div>
+                <div key={log.id} className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-4 gap-y-0.5 px-6 py-3 transition hover:bg-white/[0.02]">
+                  {/* Action badge */}
+                  <span
+                    className="rounded-lg px-1.5 py-0.5 font-jetbrains text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap"
+                    style={{ background: bg, color }}
+                  >
+                    {log.action}
+                  </span>
+
+                  {/* Detail + actor */}
+                  <div className="min-w-0">
+                    <p className="truncate text-xs text-slate-300">{detail}</p>
+                    <p className="font-jetbrains text-[10px] text-slate-600 truncate">
+                      {log.user_email || `user #${log.user_id}`}
+                    </p>
                   </div>
-                  <span className="font-jetbrains text-[11px] text-slate-600 shrink-0">{log.ip_address}</span>
-                  <span className="font-jetbrains text-[11px] text-slate-600 shrink-0">{new Date(log.created_at).toLocaleString()}</span>
+
+                  {/* IP */}
+                  <span className="font-jetbrains text-[10px] text-slate-600 shrink-0 text-right">{log.ip_address}</span>
+
+                  {/* Timestamp */}
+                  <span className="font-jetbrains text-[10px] text-slate-500 shrink-0 text-right whitespace-nowrap">
+                    {new Date(log.created_at).toLocaleString()}
+                  </span>
                 </div>
               );
             })

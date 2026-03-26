@@ -29,8 +29,9 @@ func isAtMostDaily(expr string) bool {
 }
 
 type ScheduleHandler struct {
-	DB        *sql.DB
-	Scheduler *scheduler.Scheduler
+	DB          *sql.DB
+	Scheduler   *scheduler.Scheduler
+	AuditLogger interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
 }
 
 func (h *ScheduleHandler) List(c *gin.Context) {
@@ -105,6 +106,9 @@ func (h *ScheduleHandler) Create(c *gin.Context) {
 	// Register with scheduler
 	h.Scheduler.AddSchedule(id, req.ConnectionID, req.CronExpression)
 
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "schedule.created", "schedule", id, map[string]interface{}{"connection_id": req.ConnectionID, "cron": req.CronExpression}, c.ClientIP())
+	}
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Schedule created"})
 }
 
@@ -133,6 +137,9 @@ func (h *ScheduleHandler) Delete(c *gin.Context) {
 
 	h.Scheduler.RemoveSchedule(id)
 
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "schedule.deleted", "schedule", id, map[string]interface{}{"id": id}, c.ClientIP())
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Schedule deleted"})
 }
 

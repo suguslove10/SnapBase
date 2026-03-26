@@ -66,10 +66,10 @@ func main() {
 	// Setup handlers
 	auditLogger := &audit.Logger{DB: db}
 	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger}
-	connHandler := &handlers.ConnectionHandler{DB: db}
+	connHandler := &handlers.ConnectionHandler{DB: db, AuditLogger: auditLogger}
 	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store}
 	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
-	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched}
+	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched, AuditLogger: auditLogger}
 	settingsHandler := &handlers.SettingsHandler{DB: db, Cfg: cfg, Storage: store}
 	anomalyHandler := &handlers.AnomalyHandler{DB: db}
 	auditHandler := &handlers.AuditHandler{DB: db}
