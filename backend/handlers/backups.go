@@ -89,12 +89,18 @@ func (h *BackupHandler) Trigger(c *gin.Context) {
 		return
 	}
 
-	// Verify connection belongs to user
+	// Verify connection is accessible (own or org-shared)
 	var conn models.DBConnection
-	err = h.DB.QueryRow(
-		"SELECT id, user_id, name, type, host, port, database_name, username, password_encrypted, COALESCE(auth_source, 'admin') FROM db_connections WHERE id = $1 AND user_id = $2",
-		connID, userID,
-	).Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted, &conn.AuthSource)
+	var triggerQuery string
+	var triggerArgs []interface{}
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		triggerQuery = "SELECT id, user_id, name, type, host, port, database_name, username, password_encrypted, COALESCE(auth_source, 'admin') FROM db_connections WHERE id = $1 AND (user_id = $2 OR org_id = $3)"
+		triggerArgs = []interface{}{connID, userID, orgIDRaw}
+	} else {
+		triggerQuery = "SELECT id, user_id, name, type, host, port, database_name, username, password_encrypted, COALESCE(auth_source, 'admin') FROM db_connections WHERE id = $1 AND user_id = $2"
+		triggerArgs = []interface{}{connID, userID}
+	}
+	err = h.DB.QueryRow(triggerQuery, triggerArgs...).Scan(&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted, &conn.AuthSource)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
 		return

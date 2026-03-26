@@ -20,6 +20,16 @@ type ConnectionHandler struct {
 	DB *sql.DB
 }
 
+// connAccessClause returns a SQL WHERE fragment and args to check that a connection
+// is accessible by the current user — either owned directly or via org membership.
+// Caller must pass the connection ID as the first arg ($1) before appending these.
+func connAccessClause(c *gin.Context, userID int) (string, []interface{}) {
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		return "(user_id = $2 OR org_id = $3)", []interface{}{userID, orgIDRaw}
+	}
+	return "user_id = $2", []interface{}{userID}
+}
+
 func (h *ConnectionHandler) List(c *gin.Context) {
 	userID := c.GetInt("user_id")
 	var rows *sql.Rows
@@ -143,7 +153,8 @@ func (h *ConnectionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	result, err := h.DB.Exec("DELETE FROM db_connections WHERE id = $1 AND user_id = $2", id, userID)
+	clause, extraArgs := connAccessClause(c, userID)
+	result, err := h.DB.Exec("DELETE FROM db_connections WHERE id = $1 AND "+clause, append([]interface{}{id}, extraArgs...)...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete connection"})
 		return
@@ -266,7 +277,8 @@ func (h *ConnectionHandler) UpdateRetention(c *gin.Context) {
 		days = retentionLimit
 	}
 
-	result, err := h.DB.Exec("UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND user_id = $3", days, id, userID)
+	clause, extraArgs := connAccessClause(c, userID)
+	result, err := h.DB.Exec("UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND "+clause, append([]interface{}{days, id}, extraArgs...)...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update retention"})
 		return
@@ -295,7 +307,8 @@ func (h *ConnectionHandler) UpdateStorageProvider(c *gin.Context) {
 		return
 	}
 
-	result, err := h.DB.Exec("UPDATE db_connections SET storage_provider_id = $1 WHERE id = $2 AND user_id = $3", req.StorageProviderID, id, userID)
+	clause, extraArgs := connAccessClause(c, userID)
+	result, err := h.DB.Exec("UPDATE db_connections SET storage_provider_id = $1 WHERE id = $2 AND "+clause, append([]interface{}{req.StorageProviderID, id}, extraArgs...)...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
 		return
@@ -317,10 +330,11 @@ func (h *ConnectionHandler) GetEncryption(c *gin.Context) {
 		return
 	}
 
+	clause, extraArgs := connAccessClause(c, userID)
 	var enabled bool
 	err = h.DB.QueryRow(
-		"SELECT COALESCE(encryption_enabled, false) FROM db_connections WHERE id = $1 AND user_id = $2",
-		id, userID,
+		"SELECT COALESCE(encryption_enabled, false) FROM db_connections WHERE id = $1 AND "+clause,
+		append([]interface{}{id}, extraArgs...)...,
 	).Scan(&enabled)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
@@ -348,9 +362,10 @@ func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
 		return
 	}
 
-	// Verify connection belongs to user
+	// Verify connection is accessible
+	encClause, encArgs := connAccessClause(c, userID)
 	var exists bool
-	h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM db_connections WHERE id = $1 AND user_id = $2)", id, userID).Scan(&exists)
+	h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM db_connections WHERE id = $1 AND "+encClause+")", append([]interface{}{id}, encArgs...)...).Scan(&exists)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
 		return
@@ -359,8 +374,8 @@ func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
 	if !req.Enabled {
 		// Disable: clear key, set flag to false
 		_, err = h.DB.Exec(
-			"UPDATE db_connections SET encryption_enabled = false, encryption_key_encrypted = NULL WHERE id = $1 AND user_id = $2",
-			id, userID,
+			"UPDATE db_connections SET encryption_enabled = false, encryption_key_encrypted = NULL WHERE id = $1 AND "+encClause,
+			append([]interface{}{id}, encArgs...)...,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disable encryption"})
@@ -392,8 +407,8 @@ func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
 	}
 
 	_, err = h.DB.Exec(
-		"UPDATE db_connections SET encryption_enabled = true, encryption_key_encrypted = $1 WHERE id = $2 AND user_id = $3",
-		encKey, id, userID,
+		"UPDATE db_connections SET encryption_enabled = true, encryption_key_encrypted = $1 WHERE id = $2 AND "+encClause,
+		append([]interface{}{encKey, id}, encArgs...)...,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enable encryption"})
