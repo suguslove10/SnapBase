@@ -74,12 +74,21 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Plan enforcement: free plan is limited to 2 connections
-	if getUserPlan(h.DB, userID) == "free" {
+	// Plan enforcement: free=1 connection, pro=5, team=unlimited
+	plan := getUserPlan(h.DB, userID)
+	if plan == "free" || plan == "pro" {
 		var count int
 		h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE user_id = $1", userID).Scan(&count)
-		if count >= 2 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Free plan is limited to 2 connections. Upgrade to Pro for unlimited connections.", "upgrade_required": true})
+		limit := 1
+		if plan == "pro" {
+			limit = 5
+		}
+		if count >= limit {
+			if plan == "free" {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Free plan is limited to 1 connection. Upgrade to Pro for up to 5 connections.", "upgrade_required": true})
+			} else {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Pro plan is limited to 5 connections. Upgrade to Team for unlimited connections.", "upgrade_required": true})
+			}
 			return
 		}
 	}
@@ -87,6 +96,12 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 	retentionDays := req.RetentionDays
 	if retentionDays <= 0 {
 		retentionDays = 30
+	}
+
+	// Clamp retention to plan limit
+	retentionLimit := getRetentionLimit(plan)
+	if retentionDays > retentionLimit {
+		retentionDays = retentionLimit
 	}
 
 	// SECURITY: credentials never returned to frontend — store encrypted
@@ -230,7 +245,14 @@ func (h *ConnectionHandler) UpdateRetention(c *gin.Context) {
 		return
 	}
 
-	result, err := h.DB.Exec("UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND user_id = $3", req.RetentionDays, id, userID)
+	// Clamp retention to plan limit
+	retentionLimit := getRetentionLimit(getUserPlan(h.DB, userID))
+	days := req.RetentionDays
+	if days > retentionLimit {
+		days = retentionLimit
+	}
+
+	result, err := h.DB.Exec("UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND user_id = $3", days, id, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update retention"})
 		return
@@ -406,4 +428,16 @@ func (h *ConnectionHandler) Health(c *gin.Context) {
 		health = []ConnHealth{}
 	}
 	c.JSON(http.StatusOK, health)
+}
+
+// getRetentionLimit returns the max retention days allowed for a given plan.
+func getRetentionLimit(plan string) int {
+	switch plan {
+	case "pro":
+		return 30
+	case "team", "enterprise":
+		return 90
+	default: // free
+		return 7
+	}
 }

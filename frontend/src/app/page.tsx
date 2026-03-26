@@ -296,7 +296,7 @@ export default function LandingPage() {
             Start protecting your databases today
           </h2>
           <p className="mx-auto mt-4 max-w-md text-slate-400">
-            Free plan available. No credit card required. Set up your first backup in under 2 minutes.
+            Free plan available. Pro from $9/mo. Enterprise plans for large-scale needs. No credit card required.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link
@@ -308,7 +308,7 @@ export default function LandingPage() {
             </Link>
             <Link
               href="/pricing"
-              className="rounded-xl border border-white/[0.12] px-8 py-3.5 text-sm font-semibold text-slate-300 transition hover:border-[#00b4ff]/30 hover:text-white"
+              className="rounded-xl border border-white/[0.12] px-8 py-3.5 text-sm font-semibold text-slate-300 transition hover:border-[#00b4ff]/30 hover:text-white whitespace-nowrap"
             >
               View Pricing
             </Link>

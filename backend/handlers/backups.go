@@ -108,6 +108,25 @@ func (h *BackupHandler) Trigger(c *gin.Context) {
 		}
 	}
 
+	// Storage limit enforcement
+	plan := getUserPlan(h.DB, userID)
+	used := GetStorageUsed(h.DB, userID)
+	limit := GetStorageLimit(plan)
+	if used >= limit {
+		var limitGB int64 = limit / (1024 * 1024 * 1024)
+		var msg string
+		switch plan {
+		case "free":
+			msg = fmt.Sprintf("Free plan storage limit (%dGB) reached. Upgrade to Pro for 10GB.", limitGB)
+		case "pro":
+			msg = fmt.Sprintf("Pro plan storage limit (%dGB) reached. Upgrade to Team for 100GB.", limitGB)
+		default:
+			msg = fmt.Sprintf("Storage limit (%dGB) reached. Please contact support.", limitGB)
+		}
+		c.JSON(http.StatusForbidden, gin.H{"error": msg, "upgrade_required": true})
+		return
+	}
+
 	go h.Runner.RunBackup(conn, nil)
 
 	if h.AuditLogger != nil {

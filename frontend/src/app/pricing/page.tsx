@@ -21,8 +21,9 @@ const tiers = [
     annualTotal: 0,
     description: "For side projects and personal use",
     features: [
-      "2 database connections",
+      "1 database connection",
       "Daily backups only",
+      "1 GB storage",
       "7 day retention",
       "Email notifications",
       "Community support",
@@ -30,17 +31,19 @@ const tiers = [
     cta: "Get Started",
     href: "/login",
     highlighted: false,
+    enterprise: false,
   },
   {
     name: "Pro",
-    monthly: 12,
-    annual: 10,
-    annualTotal: 120,
+    monthly: 9,
+    annual: 7,
+    annualTotal: 84,
     description: "For growing teams and production databases",
     features: [
-      "Unlimited database connections",
+      "5 database connections",
       "Every 15 min to monthly schedules",
-      "90 day retention",
+      "10 GB storage",
+      "30 day retention",
       "Email + Slack notifications",
       "Backup verification",
       "One-click restore",
@@ -49,6 +52,7 @@ const tiers = [
     cta: "Start Free Trial",
     href: "/login",
     highlighted: true,
+    enterprise: false,
   },
   {
     name: "Team",
@@ -57,6 +61,9 @@ const tiers = [
     annualTotal: 276,
     description: "For organizations with compliance needs",
     features: [
+      "Unlimited database connections",
+      "100 GB storage",
+      "90 day retention",
       "Everything in Pro",
       "5 team members",
       "Audit log",
@@ -64,9 +71,31 @@ const tiers = [
       "PagerDuty integration",
       "SLA guarantee",
     ],
-    cta: "Contact Sales",
+    cta: "Upgrade to Team",
     href: "/login",
     highlighted: false,
+    enterprise: false,
+  },
+  {
+    name: "Enterprise",
+    monthly: -1,
+    annual: -1,
+    annualTotal: -1,
+    description: "For large-scale deployments and custom needs",
+    features: [
+      "Unlimited connections",
+      "Unlimited storage",
+      "Custom retention policy",
+      "Dedicated infrastructure",
+      "SSO / SAML",
+      "Custom SLA",
+      "24/7 dedicated support",
+      "On-premise option",
+    ],
+    cta: "Contact Sales",
+    href: "/contact",
+    highlighted: false,
+    enterprise: true,
   },
 ];
 
@@ -77,7 +106,7 @@ const faqs = [
   },
   {
     q: "What happens when my trial ends?",
-    a: "Your Pro trial lasts 14 days. After that, you'll be moved to the Free plan unless you add a payment method. No data is deleted.",
+    a: "Your Pro trial lasts 14 days. After that, you'll be moved to the Free plan (1 connection, 1 GB, 7-day retention) unless you add a payment method. No data is deleted.",
   },
   {
     q: "Do you store my database credentials?",
@@ -244,8 +273,8 @@ export default function PricingPage() {
       </section>
 
       {/* Pricing cards */}
-      <section className="relative z-10 mx-auto max-w-5xl px-6 py-16">
-        <div className="grid gap-6 md:grid-cols-3">
+      <section className="relative z-10 mx-auto max-w-6xl px-6 py-16">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {tiers.map((tier) => {
             const price = annual ? tier.annual : tier.monthly;
             return (
@@ -254,11 +283,15 @@ export default function PricingPage() {
                 className={`relative rounded-2xl transition-all duration-200 hover:-translate-y-1 ${
                   tier.highlighted
                     ? "shadow-[0_0_40px_rgba(0,180,255,0.15)]"
+                    : tier.enterprise
+                    ? "shadow-[0_0_40px_rgba(251,191,36,0.10)]"
                     : ""
                 }`}
                 style={
                   tier.highlighted
                     ? { padding: "1px", background: "linear-gradient(135deg, #00b4ff, #00f5d4)", borderRadius: "1rem" }
+                    : tier.enterprise
+                    ? { padding: "1px", background: "linear-gradient(135deg, #f59e0b, #fbbf24, #d97706)", borderRadius: "1rem" }
                     : { border: "1px solid rgba(255,255,255,0.08)", borderRadius: "1rem" }
                 }
               >
@@ -276,26 +309,45 @@ export default function PricingPage() {
                       </span>
                     </div>
                   )}
+                  {tier.enterprise && (
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                      <span
+                        className="rounded-full px-3 py-1 font-grotesk text-[11px] font-semibold text-[#0a0f1e]"
+                        style={{ background: "linear-gradient(135deg, #f59e0b, #fbbf24)" }}
+                      >
+                        Custom
+                      </span>
+                    </div>
+                  )}
 
-                  <h3 className="font-grotesk text-lg font-bold text-white">{tier.name}</h3>
+                  <h3 className={`font-grotesk text-lg font-bold ${tier.enterprise ? "text-amber-300" : "text-white"}`}>{tier.name}</h3>
                   <p className="mt-1 text-xs text-slate-500">{tier.description}</p>
 
                   <div className="mt-5">
-                    <div className="flex items-end gap-1">
-                      <span className="font-grotesk text-4xl font-bold text-white">${price}</span>
-                      {price > 0 && (
-                        <span className="mb-1 text-sm text-slate-500">/mo</span>
-                      )}
-                    </div>
-                    {annual && tier.annualTotal > 0 && (
-                      <p className="mt-1 font-jetbrains text-xs text-slate-500">
-                        ${tier.annualTotal} billed annually
-                      </p>
-                    )}
-                    {!annual && tier.monthly > 0 && (
-                      <p className="mt-1 font-jetbrains text-xs text-slate-600">
-                        or ${tier.annual}/mo billed annually
-                      </p>
+                    {tier.enterprise ? (
+                      <div>
+                        <span className="font-grotesk text-2xl font-bold text-amber-300">Custom</span>
+                        <p className="mt-1 font-jetbrains text-xs text-slate-500">Tailored to your needs</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-end gap-1">
+                          <span className="font-grotesk text-4xl font-bold text-white">${price}</span>
+                          {price > 0 && (
+                            <span className="mb-1 text-sm text-slate-500">/mo</span>
+                          )}
+                        </div>
+                        {annual && tier.annualTotal > 0 && (
+                          <p className="mt-1 font-jetbrains text-xs text-slate-500">
+                            ${tier.annualTotal} billed annually
+                          </p>
+                        )}
+                        {!annual && tier.monthly > 0 && (
+                          <p className="mt-1 font-jetbrains text-xs text-slate-600">
+                            or ${tier.annual}/mo billed annually
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -306,13 +358,22 @@ export default function PricingPage() {
                     >
                       {tier.cta}
                     </Link>
-                  ) : tier.name === "Team" ? (
+                  ) : tier.enterprise ? (
                     <Link
-                      href="/contact"
-                      className="mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold transition border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white"
+                      href={tier.href}
+                      className="mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold transition text-[#0a0f1e] hover:opacity-90"
+                      style={{ background: "linear-gradient(135deg, #f59e0b, #fbbf24)" }}
                     >
                       {tier.cta}
                     </Link>
+                  ) : tier.name === "Team" ? (
+                    <button
+                      onClick={() => handleCheckout("team")}
+                      disabled={loadingPlan === "team"}
+                      className="mt-6 w-full rounded-xl py-2.5 text-center text-sm font-semibold transition border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white disabled:opacity-60"
+                    >
+                      {loadingPlan === "team" ? "Redirecting…" : tier.cta}
+                    </button>
                   ) : (
                     <button
                       onClick={() => handleCheckout(tier.name.toLowerCase())}
@@ -327,7 +388,7 @@ export default function PricingPage() {
                   <ul className="mt-6 space-y-3">
                     {tier.features.map((f) => (
                       <li key={f} className="flex items-start gap-2.5 text-sm text-slate-400">
-                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#00b4ff]" />
+                        <Check className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${tier.enterprise ? "text-amber-400" : "text-[#00b4ff]"}`} />
                         {f}
                       </li>
                     ))}

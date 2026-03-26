@@ -38,6 +38,29 @@ func getUserPlan(db *sql.DB, userID int) string {
 	return "free"
 }
 
+// GetStorageUsed returns total backup bytes used by a user.
+func GetStorageUsed(db *sql.DB, userID int) int64 {
+	var used int64
+	db.QueryRow(`
+		SELECT COALESCE(SUM(b.size_bytes), 0) FROM backup_jobs b
+		JOIN db_connections dc ON b.connection_id = dc.id
+		WHERE dc.user_id = $1 AND b.status = 'success'
+	`, userID).Scan(&used)
+	return used
+}
+
+// GetStorageLimit returns the storage limit in bytes for a given plan.
+func GetStorageLimit(plan string) int64 {
+	switch plan {
+	case "pro":
+		return 10 * 1024 * 1024 * 1024 // 10 GB
+	case "team", "enterprise":
+		return 100 * 1024 * 1024 * 1024 // 100 GB
+	default: // free
+		return 1 * 1024 * 1024 * 1024 // 1 GB
+	}
+}
+
 // seedFreeSubscription inserts a free subscription row for a newly created user.
 func seedFreeSubscription(db *sql.DB, userID int) {
 	db.Exec(
@@ -96,7 +119,7 @@ func (h *BillingHandler) CreateOrder(c *gin.Context) {
 	var amount int
 	switch strings.ToLower(req.Plan) {
 	case "pro":
-		amount = 1200 // $12.00
+		amount = 900 // $9.00
 	case "team":
 		amount = 2900 // $29.00
 	default:
