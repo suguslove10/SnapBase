@@ -165,20 +165,34 @@ func (h *ConnectionHandler) TestConnection(c *gin.Context) {
 	}
 
 	var conn models.DBConnection
-	err = h.DB.QueryRow(
-		"SELECT id, type, host, port, database_name, username, password_encrypted FROM db_connections WHERE id = $1 AND user_id = $2",
-		id, userID,
-	).Scan(&conn.ID, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted)
+	var query string
+	var args []interface{}
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		query = "SELECT id, type, host, port, database_name, username, password_encrypted FROM db_connections WHERE id = $1 AND (org_id = $2 OR user_id = $3)"
+		args = []interface{}{id, orgIDRaw, userID}
+	} else {
+		query = "SELECT id, type, host, port, database_name, username, password_encrypted FROM db_connections WHERE id = $1 AND user_id = $2"
+		args = []interface{}{id, userID}
+	}
+	err = h.DB.QueryRow(query, args...).Scan(&conn.ID, &conn.Type, &conn.Host, &conn.Port, &conn.Database, &conn.Username, &conn.PasswordEncrypted)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
 		return
+	}
+
+	// Decrypt password for auth-based tests (postgres)
+	plainPassword := conn.PasswordEncrypted
+	if conn.PasswordEncrypted != "" {
+		if p, err := crypto.Decrypt(conn.PasswordEncrypted); err == nil {
+			plainPassword = p
+		}
 	}
 
 	var testErr error
 	switch conn.Type {
 	case "postgres":
 		dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable connect_timeout=5",
-			conn.Host, conn.Port, conn.Username, conn.PasswordEncrypted, conn.Database)
+			conn.Host, conn.Port, conn.Username, plainPassword, conn.Database)
 		testDB, err := sql.Open("postgres", dsn)
 		if err != nil {
 			testErr = err

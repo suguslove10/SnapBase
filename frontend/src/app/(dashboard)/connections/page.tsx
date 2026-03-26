@@ -137,8 +137,9 @@ export default function ConnectionsPage() {
         toast.error(res.data.error || "Connection failed");
         setTestResults((prev) => ({ ...prev, [id]: false }));
       }
-    } catch {
-      toast.error("Test failed");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Test failed — check server logs");
       setTestResults((prev) => ({ ...prev, [id]: false }));
     } finally {
       setTesting(null);
