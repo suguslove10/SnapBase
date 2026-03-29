@@ -7,22 +7,29 @@ COPY go.mod ./
 COPY . .
 RUN go mod tidy && CGO_ENABLED=0 go build -o server .
 
-# Build mongodump and mongorestore from source — works on any arch, no external downloads
-RUN CGO_ENABLED=0 go install go.mongodb.org/mongo-tools/mongodump@latest && \
-    CGO_ENABLED=0 go install go.mongodb.org/mongo-tools/mongorestore@latest
+# Ubuntu 22.04 (Jammy) — MongoDB officially supports arm64 here via apt
+FROM ubuntu:22.04
 
-FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     postgresql-client \
     default-mysql-client \
     sqlite3 \
+    curl \
+    gnupg \
+    && curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
+       | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor \
+    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+       | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends mongodb-database-tools \
+    && apt-get purge -y curl gnupg \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/server /server
-COPY --from=builder /go/bin/mongodump /usr/local/bin/mongodump
-COPY --from=builder /go/bin/mongorestore /usr/local/bin/mongorestore
 
 EXPOSE 8080
 CMD ["/server"]
