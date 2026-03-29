@@ -127,7 +127,7 @@ export default function ConnectionsPage() {
   const [encConfirm, setEncConfirm] = useState("");
   const [encSaving, setEncSaving] = useState(false);
   const [editTarget, setEditTarget] = useState<Connection | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", host: "", port: 0, database: "", username: "", password: "", auth_source: "admin" });
+  const [editForm, setEditForm] = useState({ name: "", host: "", port: 0, database: "", username: "", password: "", auth_source: "admin", storage_provider_id: null as number | null });
   const [editSaving, setEditSaving] = useState(false);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [healthMap, setHealthMap] = useState<Record<number, ConnHealth>>({});
@@ -248,6 +248,7 @@ export default function ConnectionsPage() {
       username: conn.username || "",
       password: "",
       auth_source: "admin",
+      storage_provider_id: conn.storage_provider_id ?? null,
     });
   };
 
@@ -259,6 +260,11 @@ export default function ConnectionsPage() {
     setEditSaving(true);
     try {
       await api.patch(`/connections/${editTarget.id}`, editForm);
+      if (editForm.storage_provider_id !== (editTarget.storage_provider_id ?? null)) {
+        await api.patch(`/connections/${editTarget.id}/storage`, {
+          storage_provider_id: editForm.storage_provider_id,
+        });
+      }
       toast.success("Connection updated");
       setEditTarget(null);
       fetchConnections();
@@ -717,6 +723,29 @@ export default function ConnectionsPage() {
                 </>
               )}
             </div>
+
+            {storageProviders.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Storage Provider</Label>
+                <Select
+                  value={editForm.storage_provider_id?.toString() ?? "default"}
+                  onValueChange={(v) => setEditForm({ ...editForm, storage_provider_id: v === "default" ? null : parseInt(v) })}
+                >
+                  <SelectTrigger className={inputClass}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <SelectItem value="default">Default storage</SelectItem>
+                    {storageProviders.map((sp) => (
+                      <SelectItem key={sp.id} value={sp.id.toString()}>
+                        {sp.name}{sp.is_default ? " (default)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setEditTarget(null)}
                 className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white">
