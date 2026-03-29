@@ -25,9 +25,28 @@ func InitDB(cfg *config.Config) *sql.DB {
 	}
 
 	createTables(db)
+	markStaleRunningJobs(db)
 	seedAdmin(db)
 
 	return db
+}
+
+// markStaleRunningJobs marks any jobs left in "running" state as "failed".
+// This happens when the server crashes or is redeployed mid-backup.
+func markStaleRunningJobs(db *sql.DB) {
+	res, err := db.Exec(`
+		UPDATE backup_jobs
+		SET status = 'failed', error_message = 'Server restarted while backup was in progress'
+		WHERE status = 'running'
+	`)
+	if err != nil {
+		log.Printf("Warning: failed to mark stale running jobs: %v", err)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		log.Printf("Marked %d stale running backup job(s) as failed", n)
+	}
 }
 
 func createTables(db *sql.DB) {
