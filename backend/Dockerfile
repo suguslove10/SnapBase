@@ -15,14 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-mysql-client \
     sqlite3 \
     curl \
-    gnupg \
-    && curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
-       | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor \
-    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" \
-       | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends mongodb-database-tools \
-    && apt-get purge -y curl gnupg \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "arm64" ]; then \
+         curl -fsSL https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-arm64-100.9.4.tgz \
+           | tar -xz --strip-components=1 -C /usr/local/bin --wildcards '*/bin/mongodump' '*/bin/mongorestore'; \
+       else \
+         curl -fsSL https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-100.9.4.tgz \
+           | tar -xz --strip-components=1 -C /usr/local/bin --wildcards '*/bin/mongodump' '*/bin/mongorestore'; \
+       fi \
+    && apt-get purge -y curl \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
