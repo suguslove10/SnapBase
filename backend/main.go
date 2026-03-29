@@ -65,7 +65,7 @@ func main() {
 
 	// Setup handlers
 	auditLogger := &audit.Logger{DB: db}
-	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger}
+	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger, EmailConfig: emailCfg}
 	connHandler := &handlers.ConnectionHandler{DB: db, AuditLogger: auditLogger}
 	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store}
 	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
@@ -95,6 +95,8 @@ func main() {
 	r.GET("/api/invite/:token", orgHandler.GetInvite)
 	r.POST("/api/auth/register", authHandler.Register)
 	r.POST("/api/auth/login", authHandler.Login)
+	r.POST("/api/auth/forgot-password", authHandler.ForgotPassword)
+	r.POST("/api/auth/reset-password", authHandler.ResetPassword)
 	r.GET("/api/auth/providers", oauthHandler.Providers)
 	r.GET("/api/auth/google", oauthHandler.GoogleLogin)
 	r.POST("/api/auth/google/callback", oauthHandler.GoogleCallback)
@@ -153,6 +155,7 @@ func main() {
 		api.POST("/storage-providers/test", storageProviderHandler.Test)
 
 		api.GET("/billing/subscription", billingHandler.GetSubscription)
+		api.GET("/billing/usage", billingHandler.GetUsage)
 		api.POST("/billing/order", billingHandler.CreateOrder)
 		api.POST("/billing/verify", billingHandler.VerifyPayment)
 

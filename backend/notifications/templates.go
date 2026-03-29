@@ -7,9 +7,10 @@ import (
 )
 
 var (
-	successTemplate = template.Must(template.New("success").Parse(successTmpl))
-	failureTemplate = template.Must(template.New("failure").Parse(failureTmpl))
-	inviteTemplate  = template.Must(template.New("invite").Parse(inviteTmpl))
+	successTemplate       = template.Must(template.New("success").Parse(successTmpl))
+	failureTemplate       = template.Must(template.New("failure").Parse(failureTmpl))
+	inviteTemplate        = template.Must(template.New("invite").Parse(inviteTmpl))
+	passwordResetTemplate = template.Must(template.New("password_reset").Parse(passwordResetTmpl))
 )
 
 // BackupEmailData holds template data for backup emails.
@@ -70,6 +71,76 @@ func RenderInviteEmail(data InviteEmailData) (string, error) {
 	}
 	return buf.String(), nil
 }
+
+// PasswordResetEmailData holds template data for password reset emails.
+type PasswordResetEmailData struct {
+	ResetURL string
+}
+
+// RenderPasswordResetEmail renders the HTML password reset email body.
+func RenderPasswordResetEmail(data PasswordResetEmailData) (string, error) {
+	var buf bytes.Buffer
+	if err := passwordResetTemplate.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+const passwordResetTmpl = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Reset your SnapBase password</title></head>
+<body style="margin:0;padding:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0a0f1e;padding:40px 20px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+      <tr>
+        <td align="center" style="padding-bottom:32px;">
+          <span style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">SnapBase</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#0d1526;border-radius:16px;border:1px solid rgba(255,255,255,0.08);padding:36px 40px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td align="center" style="padding-bottom:24px;">
+                <div style="width:60px;height:60px;background:rgba(0,180,255,0.12);border-radius:50%;display:inline-block;text-align:center;line-height:60px;font-size:28px;">&#128274;</div>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-bottom:8px;">
+                <h1 style="margin:0;font-size:22px;font-weight:700;color:#ffffff;">Reset your password</h1>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-bottom:32px;">
+                <p style="margin:0;font-size:14px;color:#64748b;line-height:1.6;">Someone requested a password reset for your SnapBase account.<br>Click the button below to set a new password.</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-bottom:32px;">
+                <a href="{{.ResetURL}}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;font-weight:700;font-size:14px;padding:14px 40px;border-radius:10px;text-decoration:none;">Reset Password</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:16px;">
+                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px 16px;">
+                  <p style="margin:0;font-size:12px;color:#475569;line-height:1.6;">This link expires in <strong style="color:#94a3b8;">1 hour</strong>. If you didn't request a password reset, you can safely ignore this email — your password won't change.</p>
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding-top:24px;">
+          <p style="margin:0;font-size:12px;color:#334155;">SnapBase &mdash; Database backup made simple.</p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`
 
 const successTmpl = `<!DOCTYPE html>
 <html>

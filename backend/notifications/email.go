@@ -95,6 +95,22 @@ func SendInviteEmail(cfg *EmailConfig, to string, data InviteEmailData) {
 	sendEmail(cfg, to, subject, plainText, htmlBody)
 }
 
+func SendPasswordResetEmail(cfg *EmailConfig, to string, resetURL string) {
+	if !cfg.Enabled {
+		return
+	}
+	subject := "Reset your SnapBase password"
+	plainText := fmt.Sprintf(
+		"Someone requested a password reset for your SnapBase account.\n\nReset your password: %s\n\nThis link expires in 1 hour.\n\nIf you didn't request this, you can safely ignore this email.\n",
+		resetURL,
+	)
+	htmlBody := ""
+	if html, err := RenderPasswordResetEmail(PasswordResetEmailData{ResetURL: resetURL}); err == nil {
+		htmlBody = html
+	}
+	sendEmail(cfg, to, subject, plainText, htmlBody)
+}
+
 func sendEmail(cfg *EmailConfig, to, subject, plainText, htmlBody string) {
 	const boundary = "===============snapbase_mime_boundary=="
 

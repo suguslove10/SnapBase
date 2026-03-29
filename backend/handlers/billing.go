@@ -192,6 +192,80 @@ func (h *BillingHandler) VerifyPayment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// GetUsage returns storage and connection usage for the current org/user.
+func (h *BillingHandler) GetUsage(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	orgIDRaw, hasOrg := c.Get("org_id")
+	plan := getUserPlan(h.DB, userID)
+
+	// Storage used — org-aware
+	var storageUsed int64
+	if hasOrg {
+		h.DB.QueryRow(`
+			SELECT COALESCE(SUM(b.size_bytes), 0) FROM backup_jobs b
+			JOIN db_connections dc ON b.connection_id = dc.id
+			WHERE (dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2)) AND b.status = 'success'
+		`, orgIDRaw, userID).Scan(&storageUsed)
+	} else {
+		h.DB.QueryRow(`
+			SELECT COALESCE(SUM(b.size_bytes), 0) FROM backup_jobs b
+			JOIN db_connections dc ON b.connection_id = dc.id
+			WHERE dc.user_id = $1 AND b.status = 'success'
+		`, userID).Scan(&storageUsed)
+	}
+
+	storageLimit := GetStorageLimit(plan)
+	storagePercentage := 0.0
+	if storageLimit > 0 {
+		storagePercentage = float64(storageUsed) / float64(storageLimit) * 100
+	}
+
+	// Connections used — org-aware
+	var connectionsUsed int
+	if hasOrg {
+		h.DB.QueryRow(
+			"SELECT COUNT(*) FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2)",
+			orgIDRaw, userID,
+		).Scan(&connectionsUsed)
+	} else {
+		h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE user_id = $1", userID).Scan(&connectionsUsed)
+	}
+
+	connectionsLimit := 1
+	switch plan {
+	case "pro":
+		connectionsLimit = 5
+	case "team", "enterprise":
+		connectionsLimit = -1 // unlimited
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"storage_used_bytes":      storageUsed,
+		"storage_used_formatted":  formatUsageBytes(storageUsed),
+		"storage_limit_bytes":     storageLimit,
+		"storage_limit_formatted": formatUsageBytes(storageLimit),
+		"storage_percentage":      storagePercentage,
+		"connections_used":        connectionsUsed,
+		"connections_limit":       connectionsLimit,
+		"plan":                    plan,
+	})
+}
+
+func formatUsageBytes(b int64) string {
+	if b == 0 {
+		return "0 B"
+	}
+	const k = 1024
+	sizes := []string{"B", "KB", "MB", "GB", "TB"}
+	i := 0
+	size := float64(b)
+	for size >= float64(k) && i < len(sizes)-1 {
+		size /= float64(k)
+		i++
+	}
+	return fmt.Sprintf("%.2f %s", size, sizes[i])
+}
+
 // Webhook is kept as a stub for future use.
 func (h *BillingHandler) Webhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"received": true})

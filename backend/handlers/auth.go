@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -12,12 +15,14 @@ import (
 
 	"github.com/suguslove10/snapbase/config"
 	"github.com/suguslove10/snapbase/models"
+	"github.com/suguslove10/snapbase/notifications"
 )
 
 type AuthHandler struct {
-	DB           *sql.DB
-	Cfg          *config.Config
-	AuditLogger  interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
+	DB          *sql.DB
+	Cfg         *config.Config
+	AuditLogger interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
+	EmailConfig *notifications.EmailConfig
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -150,6 +155,112 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		resp["role"] = orgRole.String
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required"})
+		return
+	}
+
+	// Always return success — never reveal whether an email exists
+	success := gin.H{"message": "If that email exists, we sent a reset link"}
+
+	var userID int
+	var provider string
+	err := h.DB.QueryRow(
+		"SELECT id, COALESCE(provider, 'local') FROM users WHERE email = $1", req.Email,
+	).Scan(&userID, &provider)
+	if err != nil {
+		c.JSON(http.StatusOK, success)
+		return
+	}
+
+	// OAuth users have no password — skip silently
+	if provider != "local" {
+		c.JSON(http.StatusOK, success)
+		return
+	}
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		c.JSON(http.StatusOK, success)
+		return
+	}
+	tokenStr := hex.EncodeToString(tokenBytes)
+
+	expiresAt := time.Now().Add(1 * time.Hour)
+	_, err = h.DB.Exec(
+		"INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)",
+		userID, tokenStr, expiresAt,
+	)
+	if err != nil {
+		c.JSON(http.StatusOK, success)
+		return
+	}
+
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", h.Cfg.FrontendURL, tokenStr)
+	if h.EmailConfig != nil {
+		notifications.SendPasswordResetEmail(h.EmailConfig, req.Email, resetURL)
+	}
+
+	c.JSON(http.StatusOK, success)
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req struct {
+		Token       string `json:"token" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Token and new_password are required"})
+		return
+	}
+
+	if len(req.NewPassword) < 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be at least 6 characters"})
+		return
+	}
+
+	var tokenID, userID int
+	var expiresAt time.Time
+	var usedAt sql.NullTime
+	err := h.DB.QueryRow(
+		"SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token = $1",
+		req.Token,
+	).Scan(&tokenID, &userID, &expiresAt, &usedAt)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired reset link"})
+		return
+	}
+
+	if time.Now().After(expiresAt) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This reset link has expired"})
+		return
+	}
+
+	if usedAt.Valid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This reset link has already been used"})
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+
+	if _, err = h.DB.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+
+	h.DB.Exec("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1", tokenID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password updated successfully"})
 }
 
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {

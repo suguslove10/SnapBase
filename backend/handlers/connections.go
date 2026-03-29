@@ -433,43 +433,162 @@ func (h *ConnectionHandler) SetEncryption(c *gin.Context) {
 func (h *ConnectionHandler) Health(c *gin.Context) {
 	userID := c.GetInt("user_id")
 
-	rows, err := h.DB.Query(`
-		SELECT dc.id, dc.name, dc.type,
-			COALESCE((
-				SELECT b.status FROM backup_jobs b
-				WHERE b.connection_id = dc.id
-				ORDER BY b.started_at DESC NULLS LAST LIMIT 1
-			), 'none') as last_status,
-			EXISTS(
-				SELECT 1 FROM anomalies a
-				WHERE a.connection_id = dc.id AND a.resolved = false
-			) as has_anomaly
+	baseQuery := `
+		SELECT
+			dc.id,
+			dc.name,
+			(SELECT bj.status  FROM backup_jobs bj WHERE bj.connection_id = dc.id ORDER BY bj.started_at DESC NULLS LAST LIMIT 1) AS last_status,
+			(SELECT bj.verified FROM backup_jobs bj WHERE bj.connection_id = dc.id ORDER BY bj.started_at DESC NULLS LAST LIMIT 1) AS last_verified,
+			(SELECT bj.started_at FROM backup_jobs bj WHERE bj.connection_id = dc.id ORDER BY bj.started_at DESC NULLS LAST LIMIT 1) AS last_backup_at,
+			(SELECT COUNT(*) FROM anomalies a WHERE a.connection_id = dc.id AND a.resolved = false AND a.created_at > NOW() - INTERVAL '7 days') AS recent_anomalies,
+			(SELECT s.next_run FROM schedules s WHERE s.connection_id = dc.id AND s.enabled = true ORDER BY s.next_run ASC LIMIT 1) AS next_backup_at,
+			EXISTS(SELECT 1 FROM schedules s WHERE s.connection_id = dc.id AND s.enabled = true) AS has_schedule
 		FROM db_connections dc
-		WHERE dc.user_id = $1
-	`, userID)
+		WHERE %s`
+
+	var rows *sql.Rows
+	var err error
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		rows, err = h.DB.Query(fmt.Sprintf(baseQuery, "dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2)"), orgIDRaw, userID)
+	} else {
+		rows, err = h.DB.Query(fmt.Sprintf(baseQuery, "dc.user_id = $1"), userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusOK, []interface{}{})
 		return
 	}
 	defer rows.Close()
 
-	type ConnHealth struct {
-		ID         int    `json:"id"`
-		Name       string `json:"name"`
-		Type       string `json:"type"`
-		LastStatus string `json:"last_status"`
-		HasAnomaly bool   `json:"has_anomaly"`
+	type HealthFactors struct {
+		LastBackupSuccess  bool `json:"last_backup_success"`
+		LastBackupPoints   int  `json:"last_backup_points"`
+		Verified           bool `json:"verified"`
+		VerificationPoints int  `json:"verification_points"`
+		BackedUpRecently   bool `json:"backed_up_recently"`
+		RecencyPoints      int  `json:"recency_points"`
+		NoAnomalies        bool `json:"no_anomalies"`
+		AnomalyPoints      int  `json:"anomaly_points"`
+		HasSchedule        bool `json:"has_schedule"`
+		SchedulePoints     int  `json:"schedule_points"`
 	}
-	var health []ConnHealth
+	type ConnHealthScore struct {
+		ConnectionID   int           `json:"connection_id"`
+		ConnectionName string        `json:"connection_name"`
+		Score          int           `json:"score"`
+		Grade          string        `json:"grade"`
+		Status         string        `json:"status"`
+		Factors        HealthFactors `json:"factors"`
+		LastBackupAt   *time.Time    `json:"last_backup_at"`
+		NextBackupAt   *time.Time    `json:"next_backup_at"`
+	}
+
+	var results []ConnHealthScore
 	for rows.Next() {
-		var ch ConnHealth
-		rows.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.LastStatus, &ch.HasAnomaly)
-		health = append(health, ch)
+		var id int
+		var name string
+		var lastStatus sql.NullString
+		var lastVerified sql.NullBool
+		var lastBackupAt sql.NullTime
+		var recentAnomalies int
+		var nextBackupAt sql.NullTime
+		var hasSchedule bool
+
+		if err := rows.Scan(&id, &name, &lastStatus, &lastVerified, &lastBackupAt, &recentAnomalies, &nextBackupAt, &hasSchedule); err != nil {
+			continue
+		}
+
+		score := 0
+		factors := HealthFactors{HasSchedule: hasSchedule}
+
+		// +40: last backup succeeded
+		if lastStatus.Valid && lastStatus.String == "success" {
+			factors.LastBackupSuccess = true
+			factors.LastBackupPoints = 40
+			score += 40
+		}
+
+		// +20: last backup verified
+		if lastVerified.Valid && lastVerified.Bool {
+			factors.Verified = true
+			factors.VerificationPoints = 20
+			score += 20
+		}
+
+		// +20/+10: backed up recently
+		if lastBackupAt.Valid {
+			age := time.Since(lastBackupAt.Time)
+			if age <= 24*time.Hour {
+				factors.BackedUpRecently = true
+				factors.RecencyPoints = 20
+				score += 20
+			} else if age <= 48*time.Hour {
+				factors.BackedUpRecently = true
+				factors.RecencyPoints = 10
+				score += 10
+			}
+		}
+
+		// +20/+10: anomalies in last 7 days
+		if recentAnomalies == 0 {
+			factors.NoAnomalies = true
+			factors.AnomalyPoints = 20
+			score += 20
+		} else if recentAnomalies <= 2 {
+			factors.AnomalyPoints = 10
+			score += 10
+		}
+
+		// Grade
+		var grade string
+		switch {
+		case score >= 90:
+			grade = "A"
+		case score >= 70:
+			grade = "B"
+		case score >= 50:
+			grade = "C"
+		case score >= 30:
+			grade = "D"
+		default:
+			grade = "F"
+		}
+
+		// Status
+		var status string
+		switch {
+		case score >= 80:
+			status = "healthy"
+		case score >= 60:
+			status = "warning"
+		default:
+			status = "critical"
+		}
+
+		var lba, nba *time.Time
+		if lastBackupAt.Valid {
+			t := lastBackupAt.Time
+			lba = &t
+		}
+		if nextBackupAt.Valid {
+			t := nextBackupAt.Time
+			nba = &t
+		}
+
+		results = append(results, ConnHealthScore{
+			ConnectionID:   id,
+			ConnectionName: name,
+			Score:          score,
+			Grade:          grade,
+			Status:         status,
+			Factors:        factors,
+			LastBackupAt:   lba,
+			NextBackupAt:   nba,
+		})
 	}
-	if health == nil {
-		health = []ConnHealth{}
+	if results == nil {
+		results = []ConnHealthScore{}
 	}
-	c.JSON(http.StatusOK, health)
+	c.JSON(http.StatusOK, results)
 }
 
 // getRetentionLimit returns the max retention days allowed for a given plan.

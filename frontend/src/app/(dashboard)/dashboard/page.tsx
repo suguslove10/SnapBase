@@ -20,9 +20,40 @@ interface Stats {
   week_backups: number;
 }
 
+interface Usage {
+  storage_used_bytes: number;
+  storage_used_formatted: string;
+  storage_limit_bytes: number;
+  storage_limit_formatted: string;
+  storage_percentage: number;
+  connections_used: number;
+  connections_limit: number;
+  plan: string;
+}
+
 interface ChartPoint { day: string; success: number; failed: number; }
 interface Activity { id: number; name: string; type: string; status: string; size_bytes: number; started_at: string; }
-interface ConnHealth { id: number; name: string; type: string; last_status: string; has_anomaly: boolean; }
+interface ConnHealth {
+  connection_id: number;
+  connection_name: string;
+  score: number;
+  grade: string;
+  status: string;
+  factors: {
+    last_backup_success: boolean;
+    last_backup_points: number;
+    verified: boolean;
+    verification_points: number;
+    backed_up_recently: boolean;
+    recency_points: number;
+    no_anomalies: boolean;
+    anomaly_points: number;
+    has_schedule: boolean;
+    schedule_points: number;
+  };
+  last_backup_at: string | null;
+  next_backup_at: string | null;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -52,8 +83,41 @@ function Sparkline({ color }: { color: string }) {
   );
 }
 
+function gradeColor(grade: string): string {
+  switch (grade) {
+    case "A": return "#00ff88";
+    case "B": return "#00b4ff";
+    case "C": return "#f59e0b";
+    case "D": return "#f97316";
+    default:   return "#ef4444";
+  }
+}
+
+function CircleRing({ score, grade }: { score: number; grade: string }) {
+  const r = 20;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - Math.min(score / 100, 1));
+  const color = gradeColor(grade);
+  return (
+    <svg width="52" height="52" viewBox="0 0 52 52">
+      <circle cx="26" cy="26" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+      <circle cx="26" cy="26" r={r} fill="none" stroke={color} strokeWidth="5"
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round" transform="rotate(-90 26 26)" />
+      <text x="26" y="30" textAnchor="middle" fontSize="12" fontWeight="700" fill="white">{score}</text>
+    </svg>
+  );
+}
+
+function storageBarColor(pct: number): string {
+  if (pct > 90) return "#ef4444";
+  if (pct > 70) return "#f59e0b";
+  return "#00ff88";
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [health, setHealth] = useState<ConnHealth[]>([]);
@@ -62,6 +126,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api.get("/backups/stats").then((res) => setStats(res.data));
+    api.get("/billing/usage").then((res) => setUsage(res.data)).catch(() => {});
     api.get("/backups/chart").then((res) => setChartData(res.data));
     api.get("/backups/activity").then((res) => setActivity(res.data));
     api.get("/connections/health").then((res) => setHealth(res.data));
@@ -79,14 +144,6 @@ export default function DashboardPage() {
       icon: Database,
       color: "#00b4ff",
       bg: "rgba(0,180,255,0.08)",
-    },
-    {
-      label: "Storage Used",
-      value: formatBytes(stats.storage_used),
-      sub: null,
-      icon: HardDrive,
-      color: "#00f5d4",
-      bg: "rgba(0,245,212,0.08)",
     },
     {
       label: "Active Schedules",
@@ -129,6 +186,15 @@ export default function DashboardPage() {
     borderRadius: "1rem",
   };
 
+  const storagePct = usage?.storage_percentage ?? 0;
+  const barColor = storageBarColor(storagePct);
+
+  // Health overview counts
+  const healthyCnt = health.filter(h => h.score >= 80).length;
+  const warningCnt = health.filter(h => h.score >= 60 && h.score < 80).length;
+  const criticalCnt = health.filter(h => h.score < 60).length;
+  const criticalConns = health.filter(h => h.score < 50);
+
   return (
     <div className="space-y-8">
       {/* Upgrade success toast */}
@@ -139,6 +205,40 @@ export default function DashboardPage() {
             <p className="font-grotesk text-sm font-semibold text-white">Plan upgraded!</p>
             <p className="text-xs text-slate-400">Your new plan is now active.</p>
           </div>
+        </div>
+      )}
+
+      {/* Critical connection alerts */}
+      {criticalConns.map((conn) => (
+        <div
+          key={conn.connection_id}
+          className="flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3"
+        >
+          <span className="text-base">🚨</span>
+          <p className="flex-1 text-sm text-red-300">
+            <span className="font-semibold">{conn.connection_name}</span> needs attention — health score{" "}
+            <span className="font-mono">{conn.score}/100</span>
+          </p>
+        </div>
+      ))}
+
+      {/* Storage warning banners */}
+      {usage && usage.storage_percentage > 95 && (
+        <div className="flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+          <span className="text-base">🚨</span>
+          <p className="flex-1 text-sm text-red-300">
+            Storage almost full! New backups may fail.{" "}
+            <a href="/billing" className="font-semibold underline">Upgrade now.</a>
+          </p>
+        </div>
+      )}
+      {usage && usage.storage_percentage > 80 && usage.storage_percentage <= 95 && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+          <span className="text-base">⚠️</span>
+          <p className="flex-1 text-sm text-amber-300">
+            You&apos;ve used {usage.storage_percentage.toFixed(0)}% of your storage quota.{" "}
+            <a href="/billing" className="font-semibold underline">Upgrade to get more storage.</a>
+          </p>
         </div>
       )}
 
@@ -159,6 +259,39 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+          {/* Storage card — custom with progress bar */}
+          <div
+            className="group rounded-2xl p-4 transition-all duration-200 hover:-translate-y-0.5"
+            style={{ ...cardStyle, background: "rgba(0,245,212,0.08)", borderColor: "#00f5d422" }}
+          >
+            <div className="flex items-start justify-between">
+              <p className="font-jetbrains text-[9px] uppercase tracking-widest text-slate-500">Storage Used</p>
+              <HardDrive className="h-3.5 w-3.5 shrink-0 text-[#00f5d4] opacity-60" />
+            </div>
+            <div className="mt-2">
+              {usage ? (
+                <>
+                  <p className="font-grotesk text-sm font-bold text-white leading-tight">
+                    {usage.storage_used_formatted}
+                    <span className="font-normal text-slate-500 text-[10px]"> / {usage.storage_limit_formatted}</span>
+                  </p>
+                  <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(storagePct, 100)}%`, background: barColor }}
+                    />
+                  </div>
+                  <p className="mt-1 font-jetbrains text-[9px]" style={{ color: barColor, opacity: 0.8 }}>
+                    {storagePct < 0.01 ? "< 0.01" : storagePct.toFixed(2)}% used
+                  </p>
+                </>
+              ) : (
+                <p className="font-grotesk text-xl font-bold text-white">{formatBytes(stats.storage_used)}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Regular stat cards */}
           {statCards.map((card) => (
             <div
               key={card.label}
@@ -268,26 +401,63 @@ export default function DashboardPage() {
 
       {/* Connections Health */}
       <div className="rounded-2xl p-5" style={cardStyle}>
-        <h2 className="mb-4 font-grotesk text-sm font-semibold text-white">Connections Health</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-grotesk text-sm font-semibold text-white">Connections Health</h2>
+          {health.length > 0 && (
+            <div className="flex items-center gap-3 font-jetbrains text-[10px]">
+              {healthyCnt > 0 && (
+                <span className="flex items-center gap-1 text-[#00ff88]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#00ff88]" />{healthyCnt} healthy
+                </span>
+              )}
+              {warningCnt > 0 && (
+                <span className="flex items-center gap-1 text-amber-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{warningCnt} warning
+                </span>
+              )}
+              {criticalCnt > 0 && (
+                <span className="flex items-center gap-1 text-red-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-400" />{criticalCnt} critical
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         {health.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-600">No connections yet</div>
         ) : (
-          <div className="flex flex-wrap gap-2.5">
-            {health.map((h) => (
-              <div
-                key={h.id}
-                title={`${h.name} (${h.type}) — ${h.last_status}`}
-                className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2 transition hover:border-white/10"
-              >
-                <span className={`h-2 w-2 rounded-full ${
-                  h.has_anomaly ? "bg-yellow-400 animate-pulse" :
-                  h.last_status === "success" ? "bg-[#00ff88]" :
-                  h.last_status === "failed" ? "bg-red-400" : "bg-slate-500"
-                }`} />
-                <span className="font-grotesk text-xs font-medium text-slate-300">{h.name}</span>
-                <span className="font-jetbrains text-[10px] text-slate-600">{h.type}</span>
-              </div>
-            ))}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {health.map((h) => {
+              const color = gradeColor(h.grade);
+              return (
+                <div
+                  key={h.connection_id}
+                  className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 transition hover:border-white/10"
+                >
+                  <CircleRing score={h.score} grade={h.grade} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-grotesk text-xs font-semibold text-white">{h.connection_name}</p>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <span
+                        className="rounded px-1.5 py-0.5 font-jetbrains text-[9px] font-bold"
+                        style={{ background: `${color}20`, color }}
+                      >
+                        {h.grade}
+                      </span>
+                      <span className={`font-jetbrains text-[9px] ${
+                        h.status === "healthy" ? "text-[#00ff88]" :
+                        h.status === "warning" ? "text-amber-400" : "text-red-400"
+                      }`}>{h.status}</span>
+                    </div>
+                    {h.last_backup_at && (
+                      <p className="mt-0.5 font-jetbrains text-[9px] text-slate-600">
+                        {relativeTime(h.last_backup_at)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

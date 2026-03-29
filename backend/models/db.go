@@ -199,6 +199,14 @@ func createTables(db *sql.DB) {
 			)
 			WHERE dc.org_id IS NULL;
 		END $$`,
+		`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id),
+			token VARCHAR(255) UNIQUE NOT NULL,
+			expires_at TIMESTAMP NOT NULL,
+			used_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

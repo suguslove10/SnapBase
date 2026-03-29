@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +30,36 @@ interface StorageProvider {
   name: string;
   provider_type: string;
   is_default: boolean;
+}
+
+interface UsageInfo {
+  storage_used_formatted: string;
+  storage_limit_formatted: string;
+  connections_used: number;
+  connections_limit: number;
+  plan: string;
+}
+
+interface ConnHealth {
+  connection_id: number;
+  connection_name: string;
+  score: number;
+  grade: string;
+  status: string;
+  factors: {
+    last_backup_success: boolean;
+    last_backup_points: number;
+    verified: boolean;
+    verification_points: number;
+    backed_up_recently: boolean;
+    recency_points: number;
+    no_anomalies: boolean;
+    anomaly_points: number;
+    has_schedule: boolean;
+    schedule_points: number;
+  };
+  last_backup_at: string | null;
+  next_backup_at: string | null;
 }
 
 const defaultPorts: Record<string, number> = {
@@ -60,6 +90,27 @@ const cardStyle = {
 const inputClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-[#00b4ff]/50";
 const selectClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white";
 
+function gradeColor(grade: string): string {
+  switch (grade) {
+    case "A": return "#00ff88";
+    case "B": return "#00b4ff";
+    case "C": return "#f59e0b";
+    case "D": return "#f97316";
+    default:   return "#ef4444";
+  }
+}
+
+function healthTooltip(h: ConnHealth): string {
+  const f = h.factors;
+  const lines = [
+    f.last_backup_success ? `✅ Last backup succeeded (+${f.last_backup_points})` : `❌ Last backup failed (+0)`,
+    f.verified ? `✅ Backup verified (+${f.verification_points})` : `❌ Not verified (+0)`,
+    f.backed_up_recently ? `✅ Backed up recently (+${f.recency_points})` : `❌ No recent backup (+0)`,
+    f.no_anomalies ? `✅ No anomalies (+${f.anomaly_points})` : `⚠️ Anomalies detected (+${f.anomaly_points})`,
+  ];
+  return lines.join("\n");
+}
+
 export default function ConnectionsPage() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("manage_connections");
@@ -67,6 +118,7 @@ export default function ConnectionsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, boolean>>({});
   const [storageProviders, setStorageProviders] = useState<StorageProvider[]>([]);
@@ -74,6 +126,8 @@ export default function ConnectionsPage() {
   const [encPassword, setEncPassword] = useState("");
   const [encConfirm, setEncConfirm] = useState("");
   const [encSaving, setEncSaving] = useState(false);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const [healthMap, setHealthMap] = useState<Record<number, ConnHealth>>({});
   const [form, setForm] = useState({
     name: "", type: "postgres", host: "localhost", port: 5432,
     database: "", username: "", password: "", retention_days: 30, storage_provider_id: "", auth_source: "admin",
@@ -84,13 +138,37 @@ export default function ConnectionsPage() {
     api.get("/connections").then((res) => { setConnections(res.data); setLoading(false); });
   };
 
+  const fetchUsage = () => {
+    api.get("/billing/usage").then((res) => setUsage(res.data)).catch(() => {});
+  };
+
+  const fetchHealth = () => {
+    api.get("/connections/health").then((res) => {
+      const map: Record<number, ConnHealth> = {};
+      for (const h of (res.data as ConnHealth[])) {
+        map[h.connection_id] = h;
+      }
+      setHealthMap(map);
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     fetchConnections();
+    fetchUsage();
+    fetchHealth();
     api.get("/storage-providers").then((res) => setStorageProviders(res.data));
   }, []);
 
   const handleTypeChange = (type: string) => {
     setForm({ ...form, type, port: defaultPorts[type] || 0 });
+  };
+
+  const handleAddClick = () => {
+    if (usage && usage.connections_limit !== -1 && usage.connections_used >= usage.connections_limit) {
+      setShowUpgradeModal(true);
+    } else {
+      setOpen(true);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,6 +188,7 @@ export default function ConnectionsPage() {
       setOpen(false);
       setForm({ name: "", type: "postgres", host: "localhost", port: 5432, database: "", username: "", password: "", retention_days: 30, storage_provider_id: "", auth_source: "admin" });
       fetchConnections();
+      fetchUsage();
     } catch {
       toast.error("Failed to create connection");
     }
@@ -121,6 +200,7 @@ export default function ConnectionsPage() {
       await api.delete(`/connections/${id}`);
       toast.success("Connection deleted");
       fetchConnections();
+      fetchUsage();
     } catch {
       toast.error("Failed to delete connection");
     }
@@ -189,146 +269,190 @@ export default function ConnectionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-grotesk text-2xl font-bold text-white">Connections</h1>
-          <p className="mt-1 text-sm text-slate-500">Manage your database connections</p>
+          {usage ? (
+            <p className="mt-1 font-jetbrains text-[11px] text-slate-500">
+              {usage.connections_used}/{usage.connections_limit === -1 ? "∞" : usage.connections_limit} connections used
+              {" · "}
+              {usage.storage_used_formatted} / {usage.storage_limit_formatted} storage
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-slate-500">Manage your database connections</p>
+          )}
         </div>
-        {canManage && <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <button
-              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)] whitespace-nowrap"
-              style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-            >
-              <Plus className="h-4 w-4" />
-              Add Connection
-            </button>
-          </DialogTrigger>
-          <DialogContent
-            className="max-w-lg text-white"
-            style={{ background: "#0d1526", border: "1px solid rgba(0,180,255,0.15)", borderRadius: "1.25rem" }}
+        {canManage && (
+          <button
+            onClick={handleAddClick}
+            className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 hover:shadow-[0_4px_20px_rgba(0,180,255,0.3)] whitespace-nowrap"
+            style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
           >
-            <DialogHeader>
-              <DialogTitle className="font-grotesk text-lg font-semibold text-white">Add Connection</DialogTitle>
-            </DialogHeader>
+            <Plus className="h-4 w-4" />
+            Add Connection
+          </button>
+        )}
+      </div>
 
-            {/* IP whitelist reminder */}
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
-              <p className="text-xs text-amber-400">
-                Whitelist this server IP in your database firewall:{" "}
-                <span className="font-jetbrains font-bold select-all">161.118.183.218</span>
-              </p>
+      {/* Add Connection Dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          className="max-w-lg text-white"
+          style={{ background: "#0d1526", border: "1px solid rgba(0,180,255,0.15)", borderRadius: "1.25rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-grotesk text-lg font-semibold text-white">Add Connection</DialogTitle>
+          </DialogHeader>
+
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+            <p className="text-xs text-amber-400">
+              Whitelist this server IP in your database firewall:{" "}
+              <span className="font-jetbrains font-bold select-all">161.118.183.218</span>
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Name</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Type</Label>
+                <Select value={form.type} onValueChange={handleTypeChange}>
+                  <SelectTrigger className={selectClass}><SelectValue /></SelectTrigger>
+                  <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <SelectItem value="postgres">PostgreSQL</SelectItem>
+                    <SelectItem value="mysql">MySQL</SelectItem>
+                    <SelectItem value="mongodb">MongoDB</SelectItem>
+                    <SelectItem value="sqlite">SQLite</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {!isSqlite && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Host</Label>
+                    <Input value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} className={inputClass} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Port</Label>
+                    <Input type="number" value={form.port} onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) })} className={inputClass} />
+                  </div>
+                </>
+              )}
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
+                  {isSqlite ? "File Path" : "Database"}
+                </Label>
+                <Input value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} />
+              </div>
+
+              {!isSqlite && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Username</Label>
+                    <Input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className={inputClass} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Password</Label>
+                    <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} />
+                  </div>
+                  {form.type === "mongodb" && (
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
+                        Auth Source <span className="normal-case text-slate-700">(optional)</span>
+                      </Label>
+                      <Input
+                        value={form.auth_source}
+                        onChange={(e) => setForm({ ...form, auth_source: e.target.value })}
+                        placeholder="admin"
+                        className={inputClass}
+                      />
+                      <p className="font-jetbrains text-[10px] text-slate-600">Leave as &apos;admin&apos; for MongoDB Atlas</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Retention</Label>
+                <Select value={form.retention_days.toString()} onValueChange={(v) => setForm({ ...form, retention_days: parseInt(v) })}>
+                  <SelectTrigger className={selectClass}><SelectValue /></SelectTrigger>
+                  <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <SelectItem value="7">7 days</SelectItem>
+                    <SelectItem value="14">14 days</SelectItem>
+                    <SelectItem value="30">30 days</SelectItem>
+                    <SelectItem value="60">60 days</SelectItem>
+                    <SelectItem value="90">90 days</SelectItem>
+                    <SelectItem value="0">Forever</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {storageProviders.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Storage</Label>
+                  <Select value={form.storage_provider_id} onValueChange={(v) => setForm({ ...form, storage_provider_id: v })}>
+                    <SelectTrigger className={selectClass}><SelectValue placeholder="Default" /></SelectTrigger>
+                    <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
+                      <SelectItem value="default">Default</SelectItem>
+                      {storageProviders.map((sp) => (
+                        <SelectItem key={sp.id} value={sp.id.toString()}>
+                          {sp.name}{sp.is_default ? " (default)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Name</Label>
-                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Type</Label>
-                  <Select value={form.type} onValueChange={handleTypeChange}>
-                    <SelectTrigger className={selectClass}><SelectValue /></SelectTrigger>
-                    <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
-                      <SelectItem value="postgres">PostgreSQL</SelectItem>
-                      <SelectItem value="mysql">MySQL</SelectItem>
-                      <SelectItem value="mongodb">MongoDB</SelectItem>
-                      <SelectItem value="sqlite">SQLite</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="flex justify-end pt-1">
+              <button
+                type="submit"
+                className="rounded-xl px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
+                style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
+              >
+                Save Connection
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-                {!isSqlite && (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Host</Label>
-                      <Input value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} className={inputClass} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Port</Label>
-                      <Input type="number" value={form.port} onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) })} className={inputClass} />
-                    </div>
-                  </>
-                )}
-
-                <div className="col-span-2 space-y-1.5">
-                  <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
-                    {isSqlite ? "File Path" : "Database"}
-                  </Label>
-                  <Input value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} className={inputClass} />
-                </div>
-
-                {!isSqlite && (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Username</Label>
-                      <Input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className={inputClass} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Password</Label>
-                      <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} />
-                    </div>
-                    {form.type === "mongodb" && (
-                      <div className="col-span-2 space-y-1.5">
-                        <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
-                          Auth Source <span className="normal-case text-slate-700">(optional)</span>
-                        </Label>
-                        <Input
-                          value={form.auth_source}
-                          onChange={(e) => setForm({ ...form, auth_source: e.target.value })}
-                          placeholder="admin"
-                          className={inputClass}
-                        />
-                        <p className="font-jetbrains text-[10px] text-slate-600">Leave as &apos;admin&apos; for MongoDB Atlas</p>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Retention</Label>
-                  <Select value={form.retention_days.toString()} onValueChange={(v) => setForm({ ...form, retention_days: parseInt(v) })}>
-                    <SelectTrigger className={selectClass}><SelectValue /></SelectTrigger>
-                    <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
-                      <SelectItem value="7">7 days</SelectItem>
-                      <SelectItem value="14">14 days</SelectItem>
-                      <SelectItem value="30">30 days</SelectItem>
-                      <SelectItem value="60">60 days</SelectItem>
-                      <SelectItem value="90">90 days</SelectItem>
-                      <SelectItem value="0">Forever</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {storageProviders.length > 0 && (
-                  <div className="space-y-1.5">
-                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Storage</Label>
-                    <Select value={form.storage_provider_id} onValueChange={(v) => setForm({ ...form, storage_provider_id: v })}>
-                      <SelectTrigger className={selectClass}><SelectValue placeholder="Default" /></SelectTrigger>
-                      <SelectContent style={{ background: "#0d1526", border: "1px solid rgba(255,255,255,0.08)" }}>
-                        <SelectItem value="default">Default</SelectItem>
-                        {storageProviders.map((sp) => (
-                          <SelectItem key={sp.id} value={sp.id.toString()}>
-                            {sp.name}{sp.is_default ? " (default)" : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end pt-1">
-                <button
-                  type="submit"
-                  className="rounded-xl px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
-                  style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
-                >
-                  Save Connection
-                </button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>}
-      </div>
+      {/* Upgrade limit modal */}
+      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
+        <DialogContent
+          className="max-w-sm text-white"
+          style={{ background: "#0d1526", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "1.25rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-grotesk text-lg font-semibold text-white">Connection limit reached</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              You&apos;ve reached your connection limit ({usage?.connections_used}/{usage?.connections_limit === -1 ? "∞" : usage?.connections_limit}).
+              {usage?.plan === "free" && " Upgrade to Pro for up to 5 connections."}
+              {usage?.plan === "pro" && " Upgrade to Team for unlimited connections."}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white"
+              >
+                Cancel
+              </button>
+              <a
+                href="/billing"
+                className="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+              >
+                {usage?.plan === "free" ? "Upgrade to Pro" : "Upgrade to Team"}
+              </a>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Content */}
       {loading ? (
@@ -352,6 +476,7 @@ export default function ConnectionsPage() {
           {connections.map((conn) => {
             const color = dbColors[conn.type] || "#94a3b8";
             const tested = testResults[conn.id];
+            const health = healthMap[conn.id];
             return (
               <div
                 key={conn.id}
@@ -363,31 +488,52 @@ export default function ConnectionsPage() {
               >
                 {/* Top row */}
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-grotesk text-base font-semibold text-white">{conn.name}</h3>
+                  <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                    <h3 className="font-grotesk text-base font-semibold text-white truncate">{conn.name}</h3>
                     {conn.encryption_enabled ? (
-                      <span title="Backup encryption enabled" className="flex items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5">
+                      <span title="Backup encryption enabled" className="flex shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5">
                         <Lock className="h-2.5 w-2.5 text-emerald-400" />
                         <span className="font-jetbrains text-[9px] text-emerald-400">Encrypted</span>
                       </span>
                     ) : (
-                      <span title="Backup encryption disabled" className="flex items-center gap-1 rounded-md border border-slate-700/50 bg-slate-800/30 px-1.5 py-0.5">
+                      <span title="Backup encryption disabled" className="flex shrink-0 items-center gap-1 rounded-md border border-slate-700/50 bg-slate-800/30 px-1.5 py-0.5">
                         <LockOpen className="h-2.5 w-2.5 text-slate-600" />
                         <span className="font-jetbrains text-[9px] text-slate-600">Unencrypted</span>
                       </span>
                     )}
                     {tested === true && (
-                      <span className="relative flex h-2 w-2">
+                      <span className="relative flex h-2 w-2 shrink-0">
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00ff88] opacity-75" />
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-[#00ff88]" />
                       </span>
                     )}
                     {tested === false && (
-                      <span className="relative flex h-2 w-2">
+                      <span className="relative flex h-2 w-2 shrink-0">
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-red-400" />
                       </span>
                     )}
                   </div>
+
+                  {/* Health score badge */}
+                  {health && (
+                    <div
+                      title={healthTooltip(health)}
+                      className="flex shrink-0 flex-col items-center rounded-xl px-2 py-1 cursor-default"
+                      style={{ background: `${gradeColor(health.grade)}15`, border: `1px solid ${gradeColor(health.grade)}30` }}
+                    >
+                      <span className="font-jetbrains text-sm font-bold leading-none" style={{ color: gradeColor(health.grade) }}>
+                        {health.score}
+                      </span>
+                      <span className="font-jetbrains text-[9px] font-bold leading-tight" style={{ color: gradeColor(health.grade) }}>
+                        {health.grade}
+                      </span>
+                      <span className="font-jetbrains text-[8px] text-slate-600 leading-tight">Health</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* DB type badge */}
+                <div className="mt-1.5">
                   <span
                     className="rounded-lg px-2 py-0.5 font-jetbrains text-[10px] font-semibold uppercase tracking-wider"
                     style={{ background: `${color}18`, color }}
@@ -471,7 +617,6 @@ export default function ConnectionsPage() {
           </p>
 
           {encTarget?.encryption_enabled ? (
-            /* Currently enabled — offer to disable */
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                 <Lock className="h-5 w-5 text-emerald-400 shrink-0" />
@@ -495,7 +640,6 @@ export default function ConnectionsPage() {
               </div>
             </div>
           ) : (
-            /* Currently disabled — offer to enable */
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Encryption Password</Label>
