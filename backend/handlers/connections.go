@@ -363,8 +363,18 @@ func (h *ConnectionHandler) UpdateRetention(c *gin.Context) {
 		days = retentionLimit
 	}
 
-	clause, extraArgs := connAccessClause(c, userID)
-	result, err := h.DB.Exec("UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND "+clause, append([]interface{}{days, id}, extraArgs...)...)
+	var result sql.Result
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		result, err = h.DB.Exec(
+			"UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND (user_id = $3 OR org_id = $4)",
+			days, id, userID, orgIDRaw,
+		)
+	} else {
+		result, err = h.DB.Exec(
+			"UPDATE db_connections SET retention_days = $1 WHERE id = $2 AND user_id = $3",
+			days, id, userID,
+		)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update retention"})
 		return
@@ -393,8 +403,18 @@ func (h *ConnectionHandler) UpdateStorageProvider(c *gin.Context) {
 		return
 	}
 
-	clause, extraArgs := connAccessClause(c, userID)
-	result, err := h.DB.Exec("UPDATE db_connections SET storage_provider_id = $1 WHERE id = $2 AND "+clause, append([]interface{}{req.StorageProviderID, id}, extraArgs...)...)
+	var result sql.Result
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		result, err = h.DB.Exec(
+			"UPDATE db_connections SET storage_provider_id = $1 WHERE id = $2 AND (user_id = $3 OR org_id = $4)",
+			req.StorageProviderID, id, userID, orgIDRaw,
+		)
+	} else {
+		result, err = h.DB.Exec(
+			"UPDATE db_connections SET storage_provider_id = $1 WHERE id = $2 AND user_id = $3",
+			req.StorageProviderID, id, userID,
+		)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
 		return

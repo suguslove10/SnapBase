@@ -75,6 +75,9 @@ export default function ForgotPasswordPage() {
                   Try again
                 </button>
               </p>
+              <p className="text-xs text-slate-600 mt-2">
+                If you signed up with Google or GitHub, use that to sign in — password reset doesn&apos;t apply to social accounts.
+              </p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
