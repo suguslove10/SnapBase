@@ -112,6 +112,7 @@ func main() {
 
 		api.GET("/connections", connHandler.List)
 		api.POST("/connections", connHandler.Create)
+		api.PATCH("/connections/:id", connHandler.Update)
 		api.DELETE("/connections/:id", connHandler.Delete)
 		api.PATCH("/connections/:id/retention", connHandler.UpdateRetention)
 		api.POST("/connections/:id/test", connHandler.TestConnection)

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -126,6 +126,9 @@ export default function ConnectionsPage() {
   const [encPassword, setEncPassword] = useState("");
   const [encConfirm, setEncConfirm] = useState("");
   const [encSaving, setEncSaving] = useState(false);
+  const [editTarget, setEditTarget] = useState<Connection | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", host: "", port: 0, database: "", username: "", password: "", auth_source: "admin" });
+  const [editSaving, setEditSaving] = useState(false);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [healthMap, setHealthMap] = useState<Record<number, ConnHealth>>({});
   const [form, setForm] = useState({
@@ -232,6 +235,37 @@ export default function ConnectionsPage() {
       toast.success("Backup triggered");
     } catch {
       toast.error("Failed to trigger backup");
+    }
+  };
+
+  const openEditModal = (conn: Connection) => {
+    setEditTarget(conn);
+    setEditForm({
+      name: conn.name,
+      host: conn.host || "",
+      port: conn.port || 0,
+      database: conn.database,
+      username: conn.username || "",
+      password: "",
+      auth_source: "admin",
+    });
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    if (!editForm.name.trim()) { toast.error("Name is required"); return; }
+    if (!editForm.database.trim()) { toast.error("Database is required"); return; }
+    setEditSaving(true);
+    try {
+      await api.patch(`/connections/${editTarget.id}`, editForm);
+      toast.success("Connection updated");
+      setEditTarget(null);
+      fetchConnections();
+    } catch {
+      toast.error("Failed to update connection");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -585,6 +619,15 @@ export default function ConnectionsPage() {
                     )}
                     {canManage && (
                       <button
+                        onClick={() => openEditModal(conn)}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-[#6366f1]/30 hover:text-[#a5b4fc]"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Edit
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
                         onClick={() => handleDelete(conn.id)}
                         className="ml-auto rounded-lg p-1.5 text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
                       >
@@ -598,6 +641,99 @@ export default function ConnectionsPage() {
           })}
         </div>
       )}
+
+      {/* Edit Connection Modal */}
+      <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o && !editSaving) setEditTarget(null); }}>
+        <DialogContent
+          className="max-w-lg text-white"
+          style={{ background: "#0d1526", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "1.25rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-grotesk text-lg font-semibold text-white flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-[#a5b4fc]" />
+              Edit Connection
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEdit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Name</Label>
+                <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={inputClass} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Type</Label>
+                <div className="flex h-10 items-center rounded-xl border border-white/[0.08] bg-white/[0.02] px-3">
+                  <span
+                    className="font-jetbrains text-xs font-semibold uppercase tracking-wider"
+                    style={{ color: dbColors[editTarget?.type || ""] || "#94a3b8" }}
+                  >
+                    {dbLabels[editTarget?.type || ""] || editTarget?.type}
+                  </span>
+                </div>
+              </div>
+
+              {editTarget?.type !== "sqlite" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Host</Label>
+                    <Input value={editForm.host} onChange={(e) => setEditForm({ ...editForm, host: e.target.value })} className={inputClass} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Port</Label>
+                    <Input type="number" value={editForm.port} onChange={(e) => setEditForm({ ...editForm, port: parseInt(e.target.value) })} className={inputClass} />
+                  </div>
+                </>
+              )}
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">
+                  {editTarget?.type === "sqlite" ? "File Path" : "Database"}
+                </Label>
+                <Input value={editForm.database} onChange={(e) => setEditForm({ ...editForm, database: e.target.value })} className={inputClass} />
+              </div>
+
+              {editTarget?.type !== "sqlite" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Username</Label>
+                    <Input value={editForm.username} onChange={(e) => setEditForm({ ...editForm, username: e.target.value })} className={inputClass} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">New Password</Label>
+                    <Input
+                      type="password"
+                      value={editForm.password}
+                      onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                      placeholder="Leave empty to keep current"
+                      className={inputClass}
+                    />
+                  </div>
+                  {editTarget?.type === "mongodb" && (
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Auth Source</Label>
+                      <Input value={editForm.auth_source} onChange={(e) => setEditForm({ ...editForm, auth_source: e.target.value })} className={inputClass} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditTarget(null)}
+                className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editSaving}
+                className="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+              >
+                {editSaving ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Encryption Settings Modal */}
       <Dialog open={!!encTarget} onOpenChange={(o) => { if (!o && !encSaving) setEncTarget(null); }}>

@@ -149,6 +149,85 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Connection created"})
 }
 
+func (h *ConnectionHandler) Update(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		Name       string `json:"name"`
+		Host       string `json:"host"`
+		Port       int    `json:"port"`
+		Database   string `json:"database"`
+		Username   string `json:"username"`
+		Password   string `json:"password"` // empty = keep current
+		AuthSource string `json:"auth_source"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+	if req.Name == "" || req.Database == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name and database are required"})
+		return
+	}
+
+	authSource := req.AuthSource
+	if authSource == "" {
+		authSource = "admin"
+	}
+
+	var result sql.Result
+	orgIDRaw, hasOrg := c.Get("org_id")
+
+	if req.Password != "" {
+		encPassword, err := crypto.Encrypt(req.Password)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt credentials"})
+			return
+		}
+		if hasOrg {
+			result, err = h.DB.Exec(
+				"UPDATE db_connections SET name=$1, host=$2, port=$3, database_name=$4, username=$5, password_encrypted=$6, auth_source=$7 WHERE id=$8 AND (user_id=$9 OR org_id=$10)",
+				req.Name, req.Host, req.Port, req.Database, req.Username, encPassword, authSource, id, userID, orgIDRaw,
+			)
+		} else {
+			result, err = h.DB.Exec(
+				"UPDATE db_connections SET name=$1, host=$2, port=$3, database_name=$4, username=$5, password_encrypted=$6, auth_source=$7 WHERE id=$8 AND user_id=$9",
+				req.Name, req.Host, req.Port, req.Database, req.Username, encPassword, authSource, id, userID,
+			)
+		}
+	} else {
+		if hasOrg {
+			result, err = h.DB.Exec(
+				"UPDATE db_connections SET name=$1, host=$2, port=$3, database_name=$4, username=$5, auth_source=$6 WHERE id=$7 AND (user_id=$8 OR org_id=$9)",
+				req.Name, req.Host, req.Port, req.Database, req.Username, authSource, id, userID, orgIDRaw,
+			)
+		} else {
+			result, err = h.DB.Exec(
+				"UPDATE db_connections SET name=$1, host=$2, port=$3, database_name=$4, username=$5, auth_source=$6 WHERE id=$7 AND user_id=$8",
+				req.Name, req.Host, req.Port, req.Database, req.Username, authSource, id, userID,
+			)
+		}
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update connection"})
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogAction(userID, "connection.updated", "connection", id, map[string]interface{}{"name": req.Name}, c.ClientIP())
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Connection updated"})
+}
+
 func (h *ConnectionHandler) Delete(c *gin.Context) {
 	userID := c.GetInt("user_id")
 	id, err := strconv.Atoi(c.Param("id"))
