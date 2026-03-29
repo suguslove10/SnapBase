@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,13 +37,19 @@ type ScheduleHandler struct {
 
 func (h *ScheduleHandler) List(c *gin.Context) {
 	userID := c.GetInt("user_id")
-	rows, err := h.DB.Query(`
+	const schedQ = `
 		SELECT s.id, s.connection_id, dc.name, s.cron_expression, s.enabled, s.last_run, s.next_run, s.created_at
 		FROM schedules s
 		JOIN db_connections dc ON s.connection_id = dc.id
-		WHERE dc.user_id = $1
-		ORDER BY s.created_at DESC
-	`, userID)
+		WHERE %s
+		ORDER BY s.created_at DESC`
+	var rows *sql.Rows
+	var err error
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		rows, err = h.DB.Query(fmt.Sprintf(schedQ, "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"), orgIDRaw, userID)
+	} else {
+		rows, err = h.DB.Query(fmt.Sprintf(schedQ, "dc.user_id = $1"), userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch schedules"})
 		return
@@ -85,9 +92,16 @@ func (h *ScheduleHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Verify connection belongs to user
+	// Verify connection is accessible (own or org-shared)
 	var connID int
-	err = h.DB.QueryRow("SELECT id FROM db_connections WHERE id = $1 AND user_id = $2", req.ConnectionID, userID).Scan(&connID)
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		err = h.DB.QueryRow(
+			"SELECT id FROM db_connections WHERE id = $1 AND (org_id = $2 OR (org_id IS NULL AND user_id = $3))",
+			req.ConnectionID, orgIDRaw, userID,
+		).Scan(&connID)
+	} else {
+		err = h.DB.QueryRow("SELECT id FROM db_connections WHERE id = $1 AND user_id = $2", req.ConnectionID, userID).Scan(&connID)
+	}
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
 		return
@@ -120,11 +134,20 @@ func (h *ScheduleHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	result, err := h.DB.Exec(`
-		DELETE FROM schedules WHERE id = $1 AND connection_id IN (
-			SELECT id FROM db_connections WHERE user_id = $2
-		)
-	`, id, userID)
+	var result sql.Result
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		result, err = h.DB.Exec(`
+			DELETE FROM schedules WHERE id = $1 AND connection_id IN (
+				SELECT id FROM db_connections WHERE org_id = $2 OR (org_id IS NULL AND user_id = $3)
+			)
+		`, id, orgIDRaw, userID)
+	} else {
+		result, err = h.DB.Exec(`
+			DELETE FROM schedules WHERE id = $1 AND connection_id IN (
+				SELECT id FROM db_connections WHERE user_id = $2
+			)
+		`, id, userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete schedule"})
 		return
@@ -164,14 +187,22 @@ func (h *ScheduleHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Get schedule details and verify ownership
+	// Get schedule details and verify access
 	var connID int
 	var cronExpr string
-	err = h.DB.QueryRow(`
-		SELECT s.connection_id, s.cron_expression FROM schedules s
-		JOIN db_connections dc ON s.connection_id = dc.id
-		WHERE s.id = $1 AND dc.user_id = $2
-	`, id, userID).Scan(&connID, &cronExpr)
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		err = h.DB.QueryRow(`
+			SELECT s.connection_id, s.cron_expression FROM schedules s
+			JOIN db_connections dc ON s.connection_id = dc.id
+			WHERE s.id = $1 AND (dc.org_id = $2 OR (dc.org_id IS NULL AND dc.user_id = $3))
+		`, id, orgIDRaw, userID).Scan(&connID, &cronExpr)
+	} else {
+		err = h.DB.QueryRow(`
+			SELECT s.connection_id, s.cron_expression FROM schedules s
+			JOIN db_connections dc ON s.connection_id = dc.id
+			WHERE s.id = $1 AND dc.user_id = $2
+		`, id, userID).Scan(&connID, &cronExpr)
+	}
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Schedule not found"})
 		return

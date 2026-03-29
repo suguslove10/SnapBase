@@ -28,7 +28,7 @@ type BackupHandler struct {
 
 func (h *BackupHandler) List(c *gin.Context) {
 	userID := c.GetInt("user_id")
-	rows, err := h.DB.Query(`
+	const listQ = `
 		SELECT b.id, b.connection_id, dc.name, dc.type,
 			COALESCE(dc.host, ''), COALESCE(dc.port, 0), dc.database_name, COALESCE(dc.username, ''),
 			b.schedule_id, b.status,
@@ -38,10 +38,16 @@ func (h *BackupHandler) List(c *gin.Context) {
 			COALESCE(b.encrypted, false)
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1
+		WHERE %s
 		ORDER BY b.started_at DESC NULLS LAST
-		LIMIT 100
-	`, userID)
+		LIMIT 100`
+	var rows *sql.Rows
+	var err error
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		rows, err = h.DB.Query(fmt.Sprintf(listQ, "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"), orgIDRaw, userID)
+	} else {
+		rows, err = h.DB.Query(fmt.Sprintf(listQ, "dc.user_id = $1"), userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch backups"})
 		return
@@ -151,11 +157,19 @@ func (h *BackupHandler) Download(c *gin.Context) {
 
 	var storagePath string
 	var connID int
-	err = h.DB.QueryRow(`
-		SELECT b.storage_path, b.connection_id FROM backup_jobs b
-		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE b.id = $1 AND dc.user_id = $2 AND b.status = 'success'
-	`, backupID, userID).Scan(&storagePath, &connID)
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		err = h.DB.QueryRow(`
+			SELECT b.storage_path, b.connection_id FROM backup_jobs b
+			JOIN db_connections dc ON b.connection_id = dc.id
+			WHERE b.id = $1 AND (dc.org_id = $2 OR (dc.org_id IS NULL AND dc.user_id = $3)) AND b.status = 'success'
+		`, backupID, orgIDRaw, userID).Scan(&storagePath, &connID)
+	} else {
+		err = h.DB.QueryRow(`
+			SELECT b.storage_path, b.connection_id FROM backup_jobs b
+			JOIN db_connections dc ON b.connection_id = dc.id
+			WHERE b.id = $1 AND dc.user_id = $2 AND b.status = 'success'
+		`, backupID, userID).Scan(&storagePath, &connID)
+	}
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Backup not found"})
 		return
@@ -185,46 +199,51 @@ func (h *BackupHandler) Download(c *gin.Context) {
 func (h *BackupHandler) Stats(c *gin.Context) {
 	userID := c.GetInt("user_id")
 
+	// Build org-aware condition once, reuse for every sub-query
+	var orgCond string
+	var orgArgs []interface{}
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		orgCond = "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"
+		orgArgs = []interface{}{orgIDRaw, userID}
+	} else {
+		orgCond = "dc.user_id = $1"
+		orgArgs = []interface{}{userID}
+	}
+
 	var stats models.DashboardStats
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1
-	`, userID).Scan(&stats.TotalBackups)
+		WHERE %s`, orgCond), orgArgs...).Scan(&stats.TotalBackups)
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COALESCE(SUM(b.size_bytes), 0) FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1 AND b.status = 'success'
-	`, userID).Scan(&stats.StorageUsed)
+		WHERE %s AND b.status = 'success'`, orgCond), orgArgs...).Scan(&stats.StorageUsed)
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) FROM schedules s
 		JOIN db_connections dc ON s.connection_id = dc.id
-		WHERE dc.user_id = $1 AND s.enabled = true
-	`, userID).Scan(&stats.ActiveSchedules)
+		WHERE %s AND s.enabled = true`, orgCond), orgArgs...).Scan(&stats.ActiveSchedules)
 
 	var lastStatus sql.NullString
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT b.status FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1
-		ORDER BY b.started_at DESC NULLS LAST LIMIT 1
-	`, userID).Scan(&lastStatus)
+		WHERE %s
+		ORDER BY b.started_at DESC NULLS LAST LIMIT 1`, orgCond), orgArgs...).Scan(&lastStatus)
 	if lastStatus.Valid {
 		stats.LastBackupStatus = lastStatus.String
 	} else {
 		stats.LastBackupStatus = "none"
 	}
 
-	// Additional stats for enhanced dashboard
 	var verifiedCount int
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1 AND b.verified = true
-	`, userID).Scan(&verifiedCount)
+		WHERE %s AND b.verified = true`, orgCond), orgArgs...).Scan(&verifiedCount)
 
 	verificationRate := float64(0)
 	if stats.TotalBackups > 0 {
@@ -232,19 +251,16 @@ func (h *BackupHandler) Stats(c *gin.Context) {
 	}
 
 	var unresolvedAnomalies int
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) FROM anomalies a
 		JOIN db_connections dc ON a.connection_id = dc.id
-		WHERE dc.user_id = $1 AND a.resolved = false
-	`, userID).Scan(&unresolvedAnomalies)
+		WHERE %s AND a.resolved = false`, orgCond), orgArgs...).Scan(&unresolvedAnomalies)
 
-	// Week trend
 	var weekBackups int
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1 AND b.started_at >= NOW() - INTERVAL '7 days'
-	`, userID).Scan(&weekBackups)
+		WHERE %s AND b.started_at >= NOW() - INTERVAL '7 days'`, orgCond), orgArgs...).Scan(&weekBackups)
 
 	c.JSON(http.StatusOK, gin.H{
 		"total_backups":        stats.TotalBackups,
@@ -259,17 +275,22 @@ func (h *BackupHandler) Stats(c *gin.Context) {
 
 func (h *BackupHandler) ChartData(c *gin.Context) {
 	userID := c.GetInt("user_id")
-
-	rows, err := h.DB.Query(`
+	const chartQ = `
 		SELECT DATE(b.started_at) as day,
 			COUNT(CASE WHEN b.status = 'success' THEN 1 END) as success,
 			COUNT(CASE WHEN b.status = 'failed' THEN 1 END) as failed
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1 AND b.started_at >= NOW() - INTERVAL '30 days'
+		WHERE %s AND b.started_at >= NOW() - INTERVAL '30 days'
 		GROUP BY DATE(b.started_at)
-		ORDER BY day
-	`, userID)
+		ORDER BY day`
+	var rows *sql.Rows
+	var err error
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		rows, err = h.DB.Query(fmt.Sprintf(chartQ, "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"), orgIDRaw, userID)
+	} else {
+		rows, err = h.DB.Query(fmt.Sprintf(chartQ, "dc.user_id = $1"), userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusOK, []interface{}{})
 		return
@@ -298,15 +319,20 @@ func (h *BackupHandler) ChartData(c *gin.Context) {
 
 func (h *BackupHandler) ActivityFeed(c *gin.Context) {
 	userID := c.GetInt("user_id")
-
-	rows, err := h.DB.Query(`
+	const actQ = `
 		SELECT b.id, dc.name, dc.type, b.status, COALESCE(b.size_bytes, 0), b.started_at
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
-		WHERE dc.user_id = $1
+		WHERE %s
 		ORDER BY b.started_at DESC NULLS LAST
-		LIMIT 10
-	`, userID)
+		LIMIT 10`
+	var rows *sql.Rows
+	var err error
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		rows, err = h.DB.Query(fmt.Sprintf(actQ, "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"), orgIDRaw, userID)
+	} else {
+		rows, err = h.DB.Query(fmt.Sprintf(actQ, "dc.user_id = $1"), userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusOK, []interface{}{})
 		return
