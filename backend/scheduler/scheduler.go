@@ -78,7 +78,18 @@ func (s *Scheduler) AddSchedule(scheduleID, connectionID int, cronExpr string) {
 		return
 	}
 	s.entryMap[scheduleID] = entryID
+	s.updateNextRun(scheduleID, entryID)
 	log.Printf("Registered schedule %d with cron: %s", scheduleID, cronExpr)
+}
+
+func (s *Scheduler) updateNextRun(scheduleID int, entryID cron.EntryID) {
+	next := s.cron.Entry(entryID).Next
+	if next.IsZero() {
+		return
+	}
+	if _, err := s.db.Exec("UPDATE schedules SET next_run = $1 WHERE id = $2", next, scheduleID); err != nil {
+		log.Printf("Failed to update next_run for schedule %d: %v", scheduleID, err)
+	}
 }
 
 func (s *Scheduler) RemoveSchedule(scheduleID int) {
@@ -108,4 +119,9 @@ func (s *Scheduler) runScheduledBackup(scheduleID, connectionID int) {
 	}
 
 	s.runner.RunBackup(conn, &scheduleID)
+
+	// Refresh next_run now that this run has completed
+	if entryID, ok := s.entryMap[scheduleID]; ok {
+		s.updateNextRun(scheduleID, entryID)
+	}
 }
