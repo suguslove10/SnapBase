@@ -77,6 +77,7 @@ func main() {
 	storageProviderHandler := &handlers.StorageProviderHandler{DB: db, Cfg: cfg}
 	billingHandler := &handlers.BillingHandler{DB: db, Cfg: cfg}
 	orgHandler := &handlers.OrgHandler{DB: db, EmailConfig: emailCfg}
+	webhookHandler := &handlers.WebhookHandler{DB: db}
 
 	// Setup router
 	r := gin.Default()
@@ -169,6 +170,13 @@ func main() {
 		api.GET("/org/invites", orgHandler.ListPendingInvites)
 		api.DELETE("/org/invites/:id", orgHandler.DeleteInvite)
 		api.POST("/invite/:token/accept", orgHandler.AcceptInvite)
+
+		api.GET("/webhooks", webhookHandler.List)
+		api.POST("/webhooks", webhookHandler.Create)
+		api.PUT("/webhooks/:id", webhookHandler.Update)
+		api.DELETE("/webhooks/:id", webhookHandler.Delete)
+		api.POST("/webhooks/:id/test", webhookHandler.Test)
+		api.GET("/webhooks/:id/deliveries", webhookHandler.Deliveries)
 	}
 
 	log.Printf("Server starting on port %s", cfg.ServerPort)

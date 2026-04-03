@@ -226,6 +226,27 @@ func createTables(db *sql.DB) {
 			used_at TIMESTAMP,
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS webhooks (
+			id SERIAL PRIMARY KEY,
+			org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			url TEXT NOT NULL,
+			secret VARCHAR(255),
+			events TEXT[] DEFAULT '{}',
+			enabled BOOLEAN DEFAULT true,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS webhook_deliveries (
+			id SERIAL PRIMARY KEY,
+			webhook_id INTEGER REFERENCES webhooks(id) ON DELETE CASCADE,
+			event VARCHAR(100),
+			payload JSONB,
+			response_status INTEGER,
+			response_body TEXT,
+			delivered_at TIMESTAMP,
+			failed BOOLEAN DEFAULT false,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

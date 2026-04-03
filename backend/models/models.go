@@ -96,6 +96,29 @@ type CreateScheduleRequest struct {
 	CronExpression string `json:"cron_expression" binding:"required"`
 }
 
+type Webhook struct {
+	ID        int        `json:"id"`
+	OrgID     int        `json:"org_id"`
+	Name      string     `json:"name"`
+	URL       string     `json:"url"`
+	Secret    string     `json:"secret,omitempty"`
+	Events    []string   `json:"events"`
+	Enabled   bool       `json:"enabled"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type WebhookDelivery struct {
+	ID             int        `json:"id"`
+	WebhookID      int        `json:"webhook_id"`
+	Event          string     `json:"event"`
+	Payload        string     `json:"payload"`
+	ResponseStatus *int       `json:"response_status"`
+	ResponseBody   string     `json:"response_body"`
+	DeliveredAt    *time.Time `json:"delivered_at"`
+	Failed         bool       `json:"failed"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
 type DashboardStats struct {
 	TotalBackups    int    `json:"total_backups"`
 	StorageUsed     int64  `json:"storage_used"`

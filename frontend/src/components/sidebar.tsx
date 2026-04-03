@@ -14,6 +14,7 @@ import {
   CreditCard,
   Users,
   LogOut,
+  Webhook,
 } from "lucide-react";
 
 const navItems = [
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/connections", label: "Connections",    icon: Database },
   { href: "/schedules",   label: "Schedules",      icon: CalendarClock },
   { href: "/backups",     label: "Backup History", icon: History },
+  { href: "/webhooks",   label: "Webhooks",       icon: Webhook },
   { href: "/anomalies",   label: "Anomalies",      icon: AlertTriangle },
   { href: "/storage",     label: "Storage",        icon: HardDrive },
   { href: "/billing",     label: "Billing",        icon: CreditCard },

@@ -19,6 +19,7 @@ import (
 	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/notifications"
 	"github.com/suguslove10/snapbase/storage"
+	"github.com/suguslove10/snapbase/webhooks"
 )
 
 type Runner struct {
@@ -59,11 +60,20 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	var userEmail string
 	r.DB.QueryRow("SELECT email FROM users WHERE id = $1", conn.UserID).Scan(&userEmail)
 
+	// Get org ID for webhook delivery
+	var orgID int
+	r.DB.QueryRow("SELECT COALESCE(org_id, 0) FROM db_connections WHERE id = $1", conn.ID).Scan(&orgID)
+
 	// Execute backup
 	tmpFile, err := r.executeBackup(conn)
 	if err != nil {
 		r.failJob(jobID, err.Error())
 		r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
+		webhooks.DeliverWebhook(r.DB, orgID, "backup.failed", webhooks.BackupEventData{
+			ConnectionName: conn.Name,
+			DBType:         conn.Type,
+			BackupID:       jobID,
+		})
 		return
 	}
 	defer os.Remove(tmpFile)
@@ -129,6 +139,11 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	if err != nil {
 		r.failJob(jobID, "Failed to upload backup: "+err.Error())
 		r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
+		webhooks.DeliverWebhook(r.DB, orgID, "backup.failed", webhooks.BackupEventData{
+			ConnectionName: conn.Name,
+			DBType:         conn.Type,
+			BackupID:       jobID,
+		})
 		return
 	}
 
@@ -149,6 +164,14 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 
 	log.Printf("Backup completed: job=%d connection=%s path=%s size=%d", jobID, conn.Name, storagePath, info.Size())
 	r.sendNotification(userEmail, conn, "success", info.Size(), "", time.Since(now))
+	webhooks.DeliverWebhook(r.DB, orgID, "backup.success", webhooks.BackupEventData{
+		ConnectionName: conn.Name,
+		DBType:         conn.Type,
+		SizeBytes:      info.Size(),
+		SizeFormatted:  webhooks.FormatSize(info.Size()),
+		DurationMS:     time.Since(now).Milliseconds(),
+		BackupID:       jobID,
+	})
 
 	// Run verification async
 	if r.Verifier != nil {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/scheduler"
+	"github.com/suguslove10/snapbase/webhooks"
 )
 
 // isAtMostDaily returns true if the cron expression runs at most once per day.
@@ -123,6 +124,18 @@ func (h *ScheduleHandler) Create(c *gin.Context) {
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogAction(userID, "schedule.created", "schedule", id, map[string]interface{}{"connection_id": req.ConnectionID, "cron": req.CronExpression}, c.ClientIP())
 	}
+
+	// Webhook delivery
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		var connName string
+		h.DB.QueryRow("SELECT name FROM db_connections WHERE id = $1", req.ConnectionID).Scan(&connName)
+		webhooks.DeliverWebhook(h.DB, orgIDRaw.(int), "schedule.created", webhooks.ScheduleEventData{
+			ScheduleID:     id,
+			ConnectionName: connName,
+			CronExpression: req.CronExpression,
+		})
+	}
+
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Schedule created"})
 }
 
@@ -163,6 +176,14 @@ func (h *ScheduleHandler) Delete(c *gin.Context) {
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogAction(userID, "schedule.deleted", "schedule", id, map[string]interface{}{"id": id}, c.ClientIP())
 	}
+
+	// Webhook delivery
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		webhooks.DeliverWebhook(h.DB, orgIDRaw.(int), "schedule.deleted", webhooks.ScheduleEventData{
+			ScheduleID: id,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Schedule deleted"})
 }
 

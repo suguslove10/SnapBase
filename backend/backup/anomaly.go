@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/suguslove10/snapbase/notifications"
+	"github.com/suguslove10/snapbase/webhooks"
 )
 
 type AnomalyDetector struct {
@@ -44,13 +45,28 @@ func (a *AnomalyDetector) DetectAnomalies(connectionID int, backupJobID int, cur
 		})
 	}
 
-	// Store anomalies
+	// Store anomalies and deliver webhooks
+	var orgID int
+	a.DB.QueryRow("SELECT COALESCE(org_id, 0) FROM db_connections WHERE id = $1", connectionID).Scan(&orgID)
+
 	for _, anom := range anomalies {
 		a.DB.Exec(`
 			INSERT INTO anomalies (connection_id, backup_job_id, type, message, severity)
 			VALUES ($1, $2, $3, $4, $5)
 		`, connectionID, backupJobID, anom.Type, anom.Message, anom.Severity)
 		log.Printf("Anomaly detected: connection=%d type=%s message=%s", connectionID, anom.Type, anom.Message)
+
+		// Deliver webhook for anomaly
+		if orgID > 0 {
+			connName := ""
+			a.DB.QueryRow("SELECT name FROM db_connections WHERE id = $1", connectionID).Scan(&connName)
+			webhooks.DeliverWebhook(a.DB, orgID, "anomaly.detected", webhooks.AnomalyEventData{
+				ConnectionName: connName,
+				Type:           anom.Type,
+				Message:        anom.Message,
+				Severity:       anom.Severity,
+			})
+		}
 	}
 
 	return anomalies

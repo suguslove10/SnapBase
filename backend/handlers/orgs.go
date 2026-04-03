@@ -15,6 +15,7 @@ import (
 
 	"github.com/suguslove10/snapbase/notifications"
 	"github.com/suguslove10/snapbase/rbac"
+	"github.com/suguslove10/snapbase/webhooks"
 )
 
 type OrgHandler struct {
@@ -205,6 +206,12 @@ func (h *OrgHandler) InviteMember(c *gin.Context) {
 			AcceptURL:   frontendURL + "/invite/" + token,
 		})
 	}
+
+	// Webhook delivery
+	webhooks.DeliverWebhook(h.DB, orgIDRaw.(int), "member.invited", webhooks.MemberEventData{
+		Email: req.Email,
+		Role:  req.Role,
+	})
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Invitation sent", "token": token})
 }
@@ -438,6 +445,14 @@ func (h *OrgHandler) AcceptInvite(c *gin.Context) {
 	}
 
 	h.DB.Exec("UPDATE org_invitations SET accepted_at = NOW() WHERE id = $1", invID)
+
+	// Webhook delivery
+	var memberEmail string
+	h.DB.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&memberEmail)
+	webhooks.DeliverWebhook(h.DB, orgID, "member.joined", webhooks.MemberEventData{
+		Email: memberEmail,
+		Role:  role,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Joined organization successfully"})
 }
