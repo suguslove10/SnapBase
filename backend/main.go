@@ -79,6 +79,7 @@ func main() {
 	billingHandler := &handlers.BillingHandler{DB: db, Cfg: cfg}
 	orgHandler := &handlers.OrgHandler{DB: db, EmailConfig: emailCfg}
 	webhookHandler := &handlers.WebhookHandler{DB: db}
+	cliAuthHandler := &handlers.CLIAuthHandler{DB: db, Cfg: cfg}
 
 	syncRunner := &syncpkg.Runner{DB: db, Cfg: cfg, Storage: store, BackupRunner: runner, EmailConfig: emailCfg}
 	syncHandler := handlers.NewSyncHandler(db, syncRunner, sched)
@@ -98,6 +99,8 @@ func main() {
 
 	// Public routes
 	r.POST("/api/billing/webhook", billingHandler.Webhook)
+	r.GET("/api/cli/auth/init", cliAuthHandler.Init)
+	r.GET("/api/cli/auth/poll/:token", cliAuthHandler.Poll)
 	r.GET("/api/invite/:token", orgHandler.GetInvite)
 	r.POST("/api/auth/register", authHandler.Register)
 	r.POST("/api/auth/login", authHandler.Login)
@@ -180,6 +183,8 @@ func main() {
 		api.GET("/org/invites", orgHandler.ListPendingInvites)
 		api.DELETE("/org/invites/:id", orgHandler.DeleteInvite)
 		api.POST("/invite/:token/accept", orgHandler.AcceptInvite)
+
+		api.POST("/cli/auth/complete", cliAuthHandler.Complete)
 
 		api.GET("/sync", syncHandler.List)
 		api.POST("/sync", syncHandler.Create)

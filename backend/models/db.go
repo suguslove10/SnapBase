@@ -281,6 +281,15 @@ func createTables(db *sql.DB) {
 			error_message TEXT,
 			backup_job_id INTEGER REFERENCES backup_jobs(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS cli_auth_sessions (
+			id SERIAL PRIMARY KEY,
+			code VARCHAR(20) UNIQUE NOT NULL,
+			poll_token VARCHAR(255) UNIQUE NOT NULL,
+			user_id INTEGER REFERENCES users(id),
+			jwt TEXT,
+			expires_at TIMESTAMP NOT NULL,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)
