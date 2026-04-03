@@ -119,6 +119,18 @@ type WebhookDelivery struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
+type BackupHook struct {
+	ID             int       `json:"id"`
+	ConnectionID   int       `json:"connection_id"`
+	HookType       string    `json:"hook_type"`       // pre, post
+	HookKind       string    `json:"hook_kind"`       // sql, webhook
+	SQLScript      string    `json:"sql_script,omitempty"`
+	WebhookURL     string    `json:"webhook_url,omitempty"`
+	TimeoutSeconds int       `json:"timeout_seconds"`
+	Enabled        bool      `json:"enabled"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type DashboardStats struct {
 	TotalBackups    int    `json:"total_backups"`
 	StorageUsed     int64  `json:"storage_used"`

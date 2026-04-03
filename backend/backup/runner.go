@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -63,6 +64,9 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	// Get org ID for webhook delivery
 	var orgID int
 	r.DB.QueryRow("SELECT COALESCE(org_id, 0) FROM db_connections WHERE id = $1", conn.ID).Scan(&orgID)
+
+	// Run pre-backup hooks (failure does not fail backup)
+	r.runHooks(conn, "pre")
 
 	// Execute backup
 	tmpFile, err := r.executeBackup(conn)
@@ -164,6 +168,9 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 
 	log.Printf("Backup completed: job=%d connection=%s path=%s size=%d", jobID, conn.Name, storagePath, info.Size())
 	r.sendNotification(userEmail, conn, "success", info.Size(), "", time.Since(now))
+
+	// Run post-backup hooks (failure does not fail backup)
+	r.runHooks(conn, "post")
 	webhooks.DeliverWebhook(r.DB, orgID, "backup.success", webhooks.BackupEventData{
 		ConnectionName: conn.Name,
 		DBType:         conn.Type,
@@ -209,6 +216,90 @@ func (r *Runner) sendNotification(to string, conn models.DBConnection, status st
 	if webhookURL != "" {
 		go notifications.SendSlackNotification(webhookURL, n)
 	}
+}
+
+func (r *Runner) runHooks(conn models.DBConnection, hookType string) {
+	rows, err := r.DB.Query(
+		`SELECT id, hook_kind, COALESCE(sql_script,''), COALESCE(webhook_url,''), timeout_seconds
+		 FROM backup_hooks WHERE connection_id = $1 AND hook_type = $2 AND enabled = true
+		 ORDER BY id ASC`,
+		conn.ID, hookType,
+	)
+	if err != nil {
+		log.Printf("hooks: failed to query %s-hooks for connection %d: %v", hookType, conn.ID, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, timeoutSec int
+		var kind, sqlScript, webhookURL string
+		if err := rows.Scan(&id, &kind, &sqlScript, &webhookURL, &timeoutSec); err != nil {
+			continue
+		}
+		switch kind {
+		case "sql":
+			r.runSQLHook(id, conn, sqlScript, timeoutSec, hookType)
+		case "webhook":
+			r.runWebhookHook(id, conn, webhookURL, timeoutSec, hookType)
+		}
+	}
+}
+
+func (r *Runner) runSQLHook(hookID int, conn models.DBConnection, sqlScript string, timeoutSec int, hookType string) {
+	if sqlScript == "" {
+		return
+	}
+	var cmd *exec.Cmd
+	switch conn.Type {
+	case "postgres":
+		cmd = exec.Command("psql",
+			"-h", conn.Host,
+			"-p", fmt.Sprintf("%d", conn.Port),
+			"-U", conn.Username,
+			"-d", conn.Database,
+			"--no-password",
+			"-c", sqlScript,
+		)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", conn.PasswordEncrypted))
+	case "mysql":
+		cmd = exec.Command("mysql",
+			"-h", conn.Host,
+			"-P", fmt.Sprintf("%d", conn.Port),
+			"-u", conn.Username,
+			fmt.Sprintf("-p%s", conn.PasswordEncrypted),
+			conn.Database,
+			"-e", sqlScript,
+		)
+	case "sqlite":
+		cmd = exec.Command("sqlite3", conn.Database, sqlScript)
+	default:
+		log.Printf("hooks[%d]: SQL hooks not supported for %s, skipping", hookID, conn.Type)
+		return
+	}
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("hooks[%d]: %s SQL hook warning (backup continues): %v — %s", hookID, hookType, err, string(out))
+	} else {
+		log.Printf("hooks[%d]: %s SQL hook executed successfully", hookID, hookType)
+	}
+}
+
+func (r *Runner) runWebhookHook(hookID int, conn models.DBConnection, webhookURL string, timeoutSec int, hookType string) {
+	if webhookURL == "" {
+		return
+	}
+	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+	payload := fmt.Sprintf(`{"event":"%s_backup","connection_name":"%s","db_type":"%s"}`,
+		hookType, conn.Name, conn.Type)
+	resp, err := client.Post(webhookURL, "application/json", strings.NewReader(payload))
+	if err != nil {
+		log.Printf("hooks[%d]: %s webhook hook warning (backup continues): %v", hookID, hookType, err)
+		return
+	}
+	resp.Body.Close()
+	log.Printf("hooks[%d]: %s webhook hook delivered — HTTP %d", hookID, hookType, resp.StatusCode)
 }
 
 func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil } from "lucide-react";
+import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil, Cog } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +23,23 @@ interface Connection {
   storage_provider_id: number | null;
   encryption_enabled: boolean;
   created_at: string;
+}
+
+interface BackupHook {
+  id: number;
+  connection_id: number;
+  hook_type: "pre" | "post";
+  hook_kind: "sql" | "webhook";
+  sql_script: string;
+  webhook_url: string;
+  timeout_seconds: number;
+  enabled: boolean;
+}
+
+interface HookSummaryItem {
+  connection_id: number;
+  has_pre: boolean;
+  has_post: boolean;
 }
 
 interface StorageProvider {
@@ -136,6 +153,21 @@ export default function ConnectionsPage() {
     database: "", username: "", password: "", retention_days: 30, storage_provider_id: "", auth_source: "admin",
   });
 
+  // Hooks state
+  const [hooksTarget, setHooksTarget] = useState<Connection | null>(null);
+  const [hooksList, setHooksList] = useState<BackupHook[]>([]);
+  const [hooksLoading, setHooksLoading] = useState(false);
+  const [hookSummary, setHookSummary] = useState<Record<number, HookSummaryItem>>({});
+  const [hookForm, setHookForm] = useState({
+    hook_type: "pre" as "pre" | "post",
+    hook_kind: "sql" as "sql" | "webhook",
+    sql_script: "",
+    webhook_url: "",
+    timeout_seconds: 30,
+  });
+  const [hookFormOpen, setHookFormOpen] = useState(false);
+  const [editHookTarget, setEditHookTarget] = useState<BackupHook | null>(null);
+
   const fetchConnections = () => {
     setLoading(true);
     api.get("/connections").then((res) => { setConnections(res.data); setLoading(false); });
@@ -160,7 +192,96 @@ export default function ConnectionsPage() {
     fetchUsage();
     fetchHealth();
     api.get("/storage-providers").then((res) => setStorageProviders(res.data));
+    api.get("/connections/hooks/summary").then((res) => {
+      const map: Record<number, HookSummaryItem> = {};
+      for (const item of (res.data as HookSummaryItem[])) map[item.connection_id] = item;
+      setHookSummary(map);
+    }).catch(() => {});
   }, []);
+
+  const openHooksModal = (conn: Connection) => {
+    setHooksTarget(conn);
+    setHooksLoading(true);
+    setHookFormOpen(false);
+    setEditHookTarget(null);
+    api.get(`/connections/${conn.id}/hooks`).then((res) => {
+      setHooksList(res.data);
+    }).catch(() => toast.error("Failed to load hooks")).finally(() => setHooksLoading(false));
+  };
+
+  const refreshHooks = (connId: number) => {
+    api.get(`/connections/${connId}/hooks`).then((res) => setHooksList(res.data)).catch(() => {});
+    api.get("/connections/hooks/summary").then((res) => {
+      const map: Record<number, HookSummaryItem> = {};
+      for (const item of (res.data as HookSummaryItem[])) map[item.connection_id] = item;
+      setHookSummary(map);
+    }).catch(() => {});
+  };
+
+  const resetHookForm = () => {
+    setHookForm({ hook_type: "pre", hook_kind: "sql", sql_script: "", webhook_url: "", timeout_seconds: 30 });
+    setEditHookTarget(null);
+    setHookFormOpen(false);
+  };
+
+  const openAddHook = () => {
+    setEditHookTarget(null);
+    setHookForm({ hook_type: "pre", hook_kind: "sql", sql_script: "", webhook_url: "", timeout_seconds: 30 });
+    setHookFormOpen(true);
+  };
+
+  const openEditHook = (hook: BackupHook) => {
+    setEditHookTarget(hook);
+    setHookForm({
+      hook_type: hook.hook_type,
+      hook_kind: hook.hook_kind,
+      sql_script: hook.sql_script,
+      webhook_url: hook.webhook_url,
+      timeout_seconds: hook.timeout_seconds,
+    });
+    setHookFormOpen(true);
+  };
+
+  const handleSaveHook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hooksTarget) return;
+    try {
+      if (editHookTarget) {
+        await api.put(`/connections/${hooksTarget.id}/hooks/${editHookTarget.id}`, hookForm);
+        toast.success("Hook updated");
+      } else {
+        await api.post(`/connections/${hooksTarget.id}/hooks`, hookForm);
+        toast.success("Hook created");
+      }
+      resetHookForm();
+      refreshHooks(hooksTarget.id);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg || "Failed to save hook");
+    }
+  };
+
+  const handleDeleteHook = async (hookId: number) => {
+    if (!hooksTarget) return;
+    if (!confirm("Delete this hook?")) return;
+    try {
+      await api.delete(`/connections/${hooksTarget.id}/hooks/${hookId}`);
+      toast.success("Hook deleted");
+      refreshHooks(hooksTarget.id);
+    } catch {
+      toast.error("Failed to delete hook");
+    }
+  };
+
+  const handleToggleHook = async (hook: BackupHook) => {
+    if (!hooksTarget) return;
+    try {
+      await api.put(`/connections/${hooksTarget.id}/hooks/${hook.id}`, { enabled: !hook.enabled });
+      setHooksList((prev) => prev.map((h) => h.id === hook.id ? { ...h, enabled: !h.enabled } : h));
+    } catch {
+      toast.error("Failed to update hook");
+    }
+  };
 
   const handleTypeChange = (type: string) => {
     setForm({ ...form, type, port: defaultPorts[type] || 0 });
@@ -634,6 +755,25 @@ export default function ConnectionsPage() {
                     )}
                     {canManage && (
                       <button
+                        onClick={() => openHooksModal(conn)}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-amber-500/30 hover:text-amber-300"
+                      >
+                        <Cog className="h-3 w-3" />
+                        Hooks
+                        {hookSummary[conn.id] && (
+                          <span className="ml-0.5 flex gap-1">
+                            {hookSummary[conn.id].has_pre && (
+                              <span className="rounded bg-amber-500/15 px-1 font-jetbrains text-[9px] text-amber-400">PRE</span>
+                            )}
+                            {hookSummary[conn.id].has_post && (
+                              <span className="rounded bg-blue-500/15 px-1 font-jetbrains text-[9px] text-blue-400">POST</span>
+                            )}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
                         onClick={() => handleDelete(conn.id)}
                         className="ml-auto rounded-lg p-1.5 text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
                       >
@@ -761,6 +901,154 @@ export default function ConnectionsPage() {
               </button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hooks Modal */}
+      <Dialog open={!!hooksTarget} onOpenChange={(o) => { if (!o) { setHooksTarget(null); resetHookForm(); } }}>
+        <DialogContent
+          className="max-w-xl text-white"
+          style={{ background: "#0d1526", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "1.25rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-grotesk text-base font-semibold text-white flex items-center gap-2">
+              <Cog className="h-4 w-4 text-amber-400" />
+              Backup Hooks — {hooksTarget?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500 -mt-1">
+            Run SQL scripts or call webhook URLs before or after each backup. Hook failures are logged but do not fail the backup.
+          </p>
+
+          {hooksLoading ? (
+            <div className="space-y-2 py-4">
+              <div className="h-10 rounded-lg bg-white/[0.04] animate-pulse" />
+              <div className="h-10 rounded-lg bg-white/[0.04] animate-pulse" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Existing hooks grouped by type */}
+              {["pre", "post"].map((ht) => {
+                const htHooks = hooksList.filter((h) => h.hook_type === ht);
+                return (
+                  <div key={ht}>
+                    <p className="mb-2 font-jetbrains text-[10px] uppercase tracking-widest text-slate-600">
+                      {ht === "pre" ? "Pre-backup hooks" : "Post-backup hooks"}
+                    </p>
+                    {htHooks.length === 0 ? (
+                      <p className="text-xs text-slate-700 italic pl-1">None</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {htHooks.map((hook) => (
+                          <div key={hook.id} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                            <span className={`rounded px-1.5 py-0.5 font-jetbrains text-[9px] uppercase font-semibold ${hook.hook_kind === "sql" ? "bg-emerald-500/10 text-emerald-400" : "bg-blue-500/10 text-blue-400"}`}>
+                              {hook.hook_kind}
+                            </span>
+                            <p className="flex-1 truncate font-jetbrains text-xs text-slate-400" title={hook.hook_kind === "sql" ? hook.sql_script : hook.webhook_url}>
+                              {hook.hook_kind === "sql"
+                                ? (hook.sql_script.slice(0, 60) + (hook.sql_script.length > 60 ? "…" : ""))
+                                : hook.webhook_url}
+                            </p>
+                            <button onClick={() => handleToggleHook(hook)} title={hook.enabled ? "Disable" : "Enable"}>
+                              <span className={`h-2 w-2 rounded-full inline-block ${hook.enabled ? "bg-emerald-400" : "bg-slate-600"}`} />
+                            </button>
+                            <button onClick={() => openEditHook(hook)} className="text-xs text-slate-600 hover:text-slate-300 transition">Edit</button>
+                            <button onClick={() => handleDeleteHook(hook.id)} className="text-slate-600 hover:text-red-400 transition">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Add / Edit hook form */}
+              {hookFormOpen ? (
+                <form onSubmit={handleSaveHook} className="space-y-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <p className="font-grotesk text-xs font-semibold text-amber-300">
+                    {editHookTarget ? "Edit Hook" : "New Hook"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Timing</label>
+                      <select
+                        value={hookForm.hook_type}
+                        onChange={(e) => setHookForm((f) => ({ ...f, hook_type: e.target.value as "pre" | "post" }))}
+                        disabled={!!editHookTarget}
+                        className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                      >
+                        <option value="pre">Pre-backup</option>
+                        <option value="post">Post-backup</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Type</label>
+                      <select
+                        value={hookForm.hook_kind}
+                        onChange={(e) => setHookForm((f) => ({ ...f, hook_kind: e.target.value as "sql" | "webhook" }))}
+                        disabled={!!editHookTarget}
+                        className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                      >
+                        <option value="sql">SQL Script</option>
+                        <option value="webhook">Webhook URL</option>
+                      </select>
+                    </div>
+                  </div>
+                  {hookForm.hook_kind === "sql" ? (
+                    <div className="space-y-1">
+                      <label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">SQL Script</label>
+                      <textarea
+                        value={hookForm.sql_script}
+                        onChange={(e) => setHookForm((f) => ({ ...f, sql_script: e.target.value }))}
+                        rows={3}
+                        placeholder="-- Example: CHECKPOINT;"
+                        className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-jetbrains text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-amber-500/40 resize-none"
+                      />
+                      <p className="font-jetbrains text-[10px] text-slate-700">Runs against your database {hookForm.hook_type === "pre" ? "before" : "after"} each backup</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Webhook URL</label>
+                      <input
+                        type="url"
+                        value={hookForm.webhook_url}
+                        onChange={(e) => setHookForm((f) => ({ ...f, webhook_url: e.target.value }))}
+                        placeholder="https://example.com/hook"
+                        className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-amber-500/40"
+                      />
+                      <p className="font-jetbrains text-[10px] text-slate-700">POST request sent {hookForm.hook_type === "pre" ? "before" : "after"} backup starts</p>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Timeout</label>
+                    <select
+                      value={hookForm.timeout_seconds}
+                      onChange={(e) => setHookForm((f) => ({ ...f, timeout_seconds: parseInt(e.target.value) }))}
+                      className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-xs text-white"
+                    >
+                      {[10, 30, 60, 120].map((t) => <option key={t} value={t}>{t}s</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button type="button" onClick={resetHookForm} className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs text-slate-400 hover:text-white transition">Cancel</button>
+                    <button type="submit" className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90" style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)" }}>
+                      {editHookTarget ? "Save Changes" : "Add Hook"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  onClick={openAddHook}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-amber-500/20 py-2.5 text-xs text-amber-500/60 transition hover:border-amber-500/40 hover:text-amber-400"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Hook
+                </button>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

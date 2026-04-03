@@ -120,6 +120,11 @@ func main() {
 		api.PATCH("/connections/:id/storage", connHandler.UpdateStorageProvider)
 		api.GET("/connections/:id/encryption", connHandler.GetEncryption)
 		api.POST("/connections/:id/encryption", connHandler.SetEncryption)
+		api.GET("/connections/:id/hooks", connHandler.ListHooks)
+		api.POST("/connections/:id/hooks", connHandler.CreateHook)
+		api.PUT("/connections/:id/hooks/:hook_id", connHandler.UpdateHook)
+		api.DELETE("/connections/:id/hooks/:hook_id", connHandler.DeleteHook)
+		api.GET("/connections/hooks/summary", connHandler.HookSummary)
 
 		api.GET("/backups", backupHandler.List)
 		api.POST("/backups/trigger/:id", backupHandler.Trigger)

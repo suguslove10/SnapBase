@@ -247,6 +247,17 @@ func createTables(db *sql.DB) {
 			failed BOOLEAN DEFAULT false,
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS backup_hooks (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			hook_type VARCHAR(20) NOT NULL,
+			hook_kind VARCHAR(20) NOT NULL,
+			sql_script TEXT,
+			webhook_url TEXT,
+			timeout_seconds INTEGER DEFAULT 30,
+			enabled BOOLEAN DEFAULT true,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

@@ -701,3 +701,248 @@ func getRetentionLimit(plan string) int {
 		return 7
 	}
 }
+
+// connAccessible checks that the connection is accessible by the current user/org.
+// Returns true if accessible, false otherwise.
+func (h *ConnectionHandler) connAccessible(c *gin.Context, connID, userID int) bool {
+	var count int
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		h.DB.QueryRow(
+			"SELECT COUNT(*) FROM db_connections WHERE id = $1 AND (user_id = $2 OR org_id = $3)",
+			connID, userID, orgIDRaw,
+		).Scan(&count)
+	} else {
+		h.DB.QueryRow(
+			"SELECT COUNT(*) FROM db_connections WHERE id = $1 AND user_id = $2",
+			connID, userID,
+		).Scan(&count)
+	}
+	return count > 0
+}
+
+func (h *ConnectionHandler) ListHooks(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+	if !h.connAccessible(c, connID, userID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	rows, err := h.DB.Query(
+		`SELECT id, hook_type, hook_kind, COALESCE(sql_script,''), COALESCE(webhook_url,''), timeout_seconds, enabled, created_at
+		 FROM backup_hooks WHERE connection_id = $1 ORDER BY hook_type, id ASC`,
+		connID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch hooks"})
+		return
+	}
+	defer rows.Close()
+
+	var hooks []models.BackupHook
+	for rows.Next() {
+		var h models.BackupHook
+		if err := rows.Scan(&h.ID, &h.HookType, &h.HookKind, &h.SQLScript, &h.WebhookURL, &h.TimeoutSeconds, &h.Enabled, &h.CreatedAt); err != nil {
+			continue
+		}
+		h.ConnectionID = connID
+		hooks = append(hooks, h)
+	}
+	if hooks == nil {
+		hooks = []models.BackupHook{}
+	}
+	c.JSON(http.StatusOK, hooks)
+}
+
+func (h *ConnectionHandler) CreateHook(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+	if !h.connAccessible(c, connID, userID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	var req struct {
+		HookType       string `json:"hook_type" binding:"required"`
+		HookKind       string `json:"hook_kind" binding:"required"`
+		SQLScript      string `json:"sql_script"`
+		WebhookURL     string `json:"webhook_url"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+	if req.HookType != "pre" && req.HookType != "post" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hook_type must be 'pre' or 'post'"})
+		return
+	}
+	if req.HookKind != "sql" && req.HookKind != "webhook" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hook_kind must be 'sql' or 'webhook'"})
+		return
+	}
+	if req.TimeoutSeconds <= 0 {
+		req.TimeoutSeconds = 30
+	}
+
+	var id int
+	err = h.DB.QueryRow(
+		`INSERT INTO backup_hooks (connection_id, hook_type, hook_kind, sql_script, webhook_url, timeout_seconds)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		connID, req.HookType, req.HookKind, req.SQLScript, req.WebhookURL, req.TimeoutSeconds,
+	).Scan(&id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create hook"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Hook created"})
+}
+
+func (h *ConnectionHandler) UpdateHook(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+	hookID, err := strconv.Atoi(c.Param("hook_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid hook ID"})
+		return
+	}
+	if !h.connAccessible(c, connID, userID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	var req struct {
+		SQLScript      *string `json:"sql_script"`
+		WebhookURL     *string `json:"webhook_url"`
+		TimeoutSeconds *int    `json:"timeout_seconds"`
+		Enabled        *bool   `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	result, err := h.DB.Exec(
+		`UPDATE backup_hooks SET
+			sql_script      = COALESCE($1, sql_script),
+			webhook_url     = COALESCE($2, webhook_url),
+			timeout_seconds = COALESCE($3, timeout_seconds),
+			enabled         = COALESCE($4, enabled)
+		 WHERE id = $5 AND connection_id = $6`,
+		req.SQLScript, req.WebhookURL, req.TimeoutSeconds, req.Enabled, hookID, connID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update hook"})
+		return
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Hook not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Hook updated"})
+}
+
+func (h *ConnectionHandler) DeleteHook(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+	hookID, err := strconv.Atoi(c.Param("hook_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid hook ID"})
+		return
+	}
+	if !h.connAccessible(c, connID, userID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	result, err := h.DB.Exec(`DELETE FROM backup_hooks WHERE id = $1 AND connection_id = $2`, hookID, connID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete hook"})
+		return
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Hook not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Hook deleted"})
+}
+
+// HookSummary returns which connections have pre/post hooks.
+func (h *ConnectionHandler) HookSummary(c *gin.Context) {
+	userID := c.GetInt("user_id")
+
+	var query string
+	var args []interface{}
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		query = `SELECT DISTINCT bh.connection_id, bh.hook_type FROM backup_hooks bh
+			JOIN db_connections dc ON dc.id = bh.connection_id
+			WHERE bh.enabled = true AND (dc.user_id = $1 OR dc.org_id = $2)`
+		args = []interface{}{userID, orgIDRaw}
+	} else {
+		query = `SELECT DISTINCT bh.connection_id, bh.hook_type FROM backup_hooks bh
+			JOIN db_connections dc ON dc.id = bh.connection_id
+			WHERE bh.enabled = true AND dc.user_id = $1`
+		args = []interface{}{userID}
+	}
+
+	rows, err := h.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch hook summary"})
+		return
+	}
+	defer rows.Close()
+
+	type Summary struct {
+		HasPre  bool `json:"has_pre"`
+		HasPost bool `json:"has_post"`
+	}
+	result := map[int]*Summary{}
+	for rows.Next() {
+		var connID int
+		var hookType string
+		if err := rows.Scan(&connID, &hookType); err != nil {
+			continue
+		}
+		if result[connID] == nil {
+			result[connID] = &Summary{}
+		}
+		if hookType == "pre" {
+			result[connID].HasPre = true
+		} else {
+			result[connID].HasPost = true
+		}
+	}
+
+	type SummaryEntry struct {
+		ConnectionID int  `json:"connection_id"`
+		HasPre       bool `json:"has_pre"`
+		HasPost      bool `json:"has_post"`
+	}
+	var entries []SummaryEntry
+	for cid, s := range result {
+		entries = append(entries, SummaryEntry{ConnectionID: cid, HasPre: s.HasPre, HasPost: s.HasPost})
+	}
+	if entries == nil {
+		entries = []SummaryEntry{}
+	}
+	c.JSON(http.StatusOK, entries)
+}
+
