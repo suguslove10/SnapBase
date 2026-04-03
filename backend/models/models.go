@@ -131,6 +131,35 @@ type BackupHook struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type SyncJob struct {
+	ID                   int        `json:"id"`
+	OrgID                int        `json:"org_id"`
+	Name                 string     `json:"name"`
+	SourceConnectionID   int        `json:"source_connection_id"`
+	TargetConnectionID   int        `json:"target_connection_id"`
+	SourceConnectionName string     `json:"source_connection_name,omitempty"`
+	TargetConnectionName string     `json:"target_connection_name,omitempty"`
+	SourceType           string     `json:"source_type,omitempty"`
+	TargetType           string     `json:"target_type,omitempty"`
+	Schedule             string     `json:"schedule"`
+	Status               string     `json:"status"`
+	LastRunAt            *time.Time `json:"last_run_at"`
+	LastRunStatus        string     `json:"last_run_status"`
+	LastRunError         string     `json:"last_run_error,omitempty"`
+	Enabled              bool       `json:"enabled"`
+	CreatedAt            time.Time  `json:"created_at"`
+}
+
+type SyncRun struct {
+	ID          int        `json:"id"`
+	SyncJobID   int        `json:"sync_job_id"`
+	Status      string     `json:"status"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	BackupJobID  *int      `json:"backup_job_id"`
+}
+
 type DashboardStats struct {
 	TotalBackups    int    `json:"total_backups"`
 	StorageUsed     int64  `json:"storage_used"`

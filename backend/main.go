@@ -16,6 +16,7 @@ import (
 	"github.com/suguslove10/snapbase/retention"
 	"github.com/suguslove10/snapbase/scheduler"
 	"github.com/suguslove10/snapbase/storage"
+	syncpkg "github.com/suguslove10/snapbase/sync"
 )
 
 func main() {
@@ -78,6 +79,10 @@ func main() {
 	billingHandler := &handlers.BillingHandler{DB: db, Cfg: cfg}
 	orgHandler := &handlers.OrgHandler{DB: db, EmailConfig: emailCfg}
 	webhookHandler := &handlers.WebhookHandler{DB: db}
+
+	syncRunner := &syncpkg.Runner{DB: db, Cfg: cfg, Storage: store, BackupRunner: runner, EmailConfig: emailCfg}
+	syncHandler := handlers.NewSyncHandler(db, syncRunner, sched)
+	syncHandler.LoadSchedules()
 
 	// Setup router
 	r := gin.Default()
@@ -175,6 +180,13 @@ func main() {
 		api.GET("/org/invites", orgHandler.ListPendingInvites)
 		api.DELETE("/org/invites/:id", orgHandler.DeleteInvite)
 		api.POST("/invite/:token/accept", orgHandler.AcceptInvite)
+
+		api.GET("/sync", syncHandler.List)
+		api.POST("/sync", syncHandler.Create)
+		api.PUT("/sync/:id", syncHandler.Update)
+		api.DELETE("/sync/:id", syncHandler.Delete)
+		api.POST("/sync/:id/run", syncHandler.TriggerRun)
+		api.GET("/sync/:id/runs", syncHandler.Runs)
 
 		api.GET("/webhooks", webhookHandler.List)
 		api.POST("/webhooks", webhookHandler.Create)

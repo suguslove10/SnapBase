@@ -92,6 +92,17 @@ func (s *Scheduler) updateNextRun(scheduleID int, entryID cron.EntryID) {
 	}
 }
 
+// AddCustomJob registers an arbitrary function on a cron expression.
+// Returns the entry ID so the caller can remove it later.
+func (s *Scheduler) AddCustomJob(cronExpr string, fn func()) (cron.EntryID, error) {
+	return s.cron.AddFunc(cronExpr, fn)
+}
+
+// RemoveEntry removes a cron entry by ID.
+func (s *Scheduler) RemoveEntry(id cron.EntryID) {
+	s.cron.Remove(id)
+}
+
 func (s *Scheduler) RemoveSchedule(scheduleID int) {
 	if entryID, ok := s.entryMap[scheduleID]; ok {
 		s.cron.Remove(entryID)

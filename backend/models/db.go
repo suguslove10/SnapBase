@@ -258,6 +258,29 @@ func createTables(db *sql.DB) {
 			enabled BOOLEAN DEFAULT true,
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS sync_jobs (
+			id SERIAL PRIMARY KEY,
+			org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			source_connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			target_connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			schedule VARCHAR(100),
+			status VARCHAR(20) DEFAULT 'idle',
+			last_run_at TIMESTAMP,
+			last_run_status VARCHAR(20),
+			last_run_error TEXT,
+			enabled BOOLEAN DEFAULT true,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS sync_runs (
+			id SERIAL PRIMARY KEY,
+			sync_job_id INTEGER REFERENCES sync_jobs(id) ON DELETE CASCADE,
+			status VARCHAR(20),
+			started_at TIMESTAMP,
+			completed_at TIMESTAMP,
+			error_message TEXT,
+			backup_job_id INTEGER REFERENCES backup_jobs(id)
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)
