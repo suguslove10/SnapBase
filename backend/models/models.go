@@ -160,9 +160,23 @@ type SyncRun struct {
 	BackupJobID  *int      `json:"backup_job_id"`
 }
 
+type ConnectionPermission struct {
+	ID           int    `json:"id"`
+	ConnectionID int    `json:"connection_id"`
+	OrgMemberID  int    `json:"org_member_id"`
+	UserID       int    `json:"user_id"`
+	Email        string `json:"email"`
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+	CanView      bool   `json:"can_view"`
+	CanBackup    bool   `json:"can_backup"`
+	CanRestore   bool   `json:"can_restore"`
+	CanManage    bool   `json:"can_manage"`
+}
+
 type DashboardStats struct {
-	TotalBackups    int    `json:"total_backups"`
-	StorageUsed     int64  `json:"storage_used"`
-	ActiveSchedules int    `json:"active_schedules"`
+	TotalBackups     int   `json:"total_backups"`
+	StorageUsed      int64 `json:"storage_used"`
+	ActiveSchedules  int   `json:"active_schedules"`
 	LastBackupStatus string `json:"last_backup_status"`
 }

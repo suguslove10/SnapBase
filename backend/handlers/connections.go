@@ -946,3 +946,117 @@ func (h *ConnectionHandler) HookSummary(c *gin.Context) {
 	c.JSON(http.StatusOK, entries)
 }
 
+// GetPermissions returns the permission matrix for a connection across all org members.
+func (h *ConnectionHandler) GetPermissions(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+	orgIDRaw, hasOrg := c.Get("org_id")
+	if !hasOrg {
+		c.JSON(http.StatusOK, []models.ConnectionPermission{})
+		return
+	}
+	orgID := orgIDRaw.(int)
+
+	// Verify connection belongs to org or user
+	var ownerCheck int
+	if err := h.DB.QueryRow("SELECT id FROM db_connections WHERE id = $1 AND (user_id = $2 OR org_id = $3)", connID, userID, orgID).Scan(&ownerCheck); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT m.id, u.id, u.email, COALESCE(u.name,''), m.role,
+		       COALESCE(cp.can_view, true), COALESCE(cp.can_backup, false),
+		       COALESCE(cp.can_restore, false), COALESCE(cp.can_manage, false)
+		FROM org_members m
+		JOIN users u ON u.id = m.user_id
+		LEFT JOIN connection_permissions cp ON cp.org_member_id = m.id AND cp.connection_id = $1
+		WHERE m.org_id = $2
+		ORDER BY m.created_at ASC
+	`, connID, orgID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch permissions"})
+		return
+	}
+	defer rows.Close()
+
+	var perms []models.ConnectionPermission
+	for rows.Next() {
+		var p models.ConnectionPermission
+		p.ConnectionID = connID
+		if err := rows.Scan(&p.OrgMemberID, &p.UserID, &p.Email, &p.Name, &p.Role,
+			&p.CanView, &p.CanBackup, &p.CanRestore, &p.CanManage); err != nil {
+			continue
+		}
+		perms = append(perms, p)
+	}
+	if perms == nil {
+		perms = []models.ConnectionPermission{}
+	}
+	c.JSON(http.StatusOK, perms)
+}
+
+// UpdatePermissions upserts the permission row for one org member on a connection.
+func (h *ConnectionHandler) UpdatePermissions(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+	orgIDRaw, hasOrg := c.Get("org_id")
+	if !hasOrg {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Org context required"})
+		return
+	}
+	orgID := orgIDRaw.(int)
+
+	// Only owners/admins may manage permissions
+	var callerRole string
+	h.DB.QueryRow("SELECT role FROM org_members WHERE org_id = $1 AND user_id = $2", orgID, userID).Scan(&callerRole)
+	if callerRole != "owner" && callerRole != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only owners and admins can manage connection permissions"})
+		return
+	}
+
+	var req struct {
+		OrgMemberID int  `json:"org_member_id" binding:"required"`
+		CanView     bool `json:"can_view"`
+		CanBackup   bool `json:"can_backup"`
+		CanRestore  bool `json:"can_restore"`
+		CanManage   bool `json:"can_manage"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Verify the member belongs to this org and the connection belongs to it too
+	var memberCheck int
+	if err := h.DB.QueryRow("SELECT id FROM org_members WHERE id = $1 AND org_id = $2", req.OrgMemberID, orgID).Scan(&memberCheck); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Member not found in org"})
+		return
+	}
+	var connCheck int
+	if err := h.DB.QueryRow("SELECT id FROM db_connections WHERE id = $1 AND (user_id = $2 OR org_id = $3)", connID, userID, orgID).Scan(&connCheck); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	_, err = h.DB.Exec(`
+		INSERT INTO connection_permissions (connection_id, org_member_id, can_view, can_backup, can_restore, can_manage)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (connection_id, org_member_id) DO UPDATE
+		SET can_view=$3, can_backup=$4, can_restore=$5, can_manage=$6
+	`, connID, req.OrgMemberID, req.CanView, req.CanBackup, req.CanRestore, req.CanManage)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update permissions"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Permissions updated"})
+}
+

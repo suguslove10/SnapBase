@@ -133,6 +133,8 @@ func main() {
 		api.PUT("/connections/:id/hooks/:hook_id", connHandler.UpdateHook)
 		api.DELETE("/connections/:id/hooks/:hook_id", connHandler.DeleteHook)
 		api.GET("/connections/hooks/summary", connHandler.HookSummary)
+		api.GET("/connections/:id/permissions", connHandler.GetPermissions)
+		api.PUT("/connections/:id/permissions", connHandler.UpdatePermissions)
 
 		api.GET("/backups", backupHandler.List)
 		api.POST("/backups/trigger/:id", backupHandler.Trigger)

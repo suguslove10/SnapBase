@@ -290,6 +290,17 @@ func createTables(db *sql.DB) {
 			expires_at TIMESTAMP NOT NULL,
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS connection_permissions (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			org_member_id INTEGER REFERENCES org_members(id) ON DELETE CASCADE,
+			can_view    BOOLEAN NOT NULL DEFAULT true,
+			can_backup  BOOLEAN NOT NULL DEFAULT false,
+			can_restore BOOLEAN NOT NULL DEFAULT false,
+			can_manage  BOOLEAN NOT NULL DEFAULT false,
+			created_at TIMESTAMP DEFAULT NOW(),
+			UNIQUE(connection_id, org_member_id)
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

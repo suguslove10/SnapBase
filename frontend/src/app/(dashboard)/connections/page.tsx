@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil, Cog } from "lucide-react";
+import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil, Cog, Shield, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +23,20 @@ interface Connection {
   storage_provider_id: number | null;
   encryption_enabled: boolean;
   created_at: string;
+}
+
+interface ConnectionPermission {
+  id: number;
+  connection_id: number;
+  org_member_id: number;
+  user_id: number;
+  email: string;
+  name: string;
+  role: string;
+  can_view: boolean;
+  can_backup: boolean;
+  can_restore: boolean;
+  can_manage: boolean;
 }
 
 interface BackupHook {
@@ -168,6 +182,12 @@ export default function ConnectionsPage() {
   const [hookFormOpen, setHookFormOpen] = useState(false);
   const [editHookTarget, setEditHookTarget] = useState<BackupHook | null>(null);
 
+  // Permissions state
+  const [permsTarget, setPermsTarget] = useState<Connection | null>(null);
+  const [permsList, setPermsList] = useState<ConnectionPermission[]>([]);
+  const [permsLoading, setPermsLoading] = useState(false);
+  const [permsSaving, setPermsSaving] = useState<number | null>(null);
+
   const fetchConnections = () => {
     setLoading(true);
     api.get("/connections").then((res) => { setConnections(res.data); setLoading(false); });
@@ -280,6 +300,34 @@ export default function ConnectionsPage() {
       setHooksList((prev) => prev.map((h) => h.id === hook.id ? { ...h, enabled: !h.enabled } : h));
     } catch {
       toast.error("Failed to update hook");
+    }
+  };
+
+  const openPermsModal = (conn: Connection) => {
+    setPermsTarget(conn);
+    setPermsLoading(true);
+    api.get(`/connections/${conn.id}/permissions`)
+      .then((res) => setPermsList(res.data))
+      .catch(() => toast.error("Failed to load permissions"))
+      .finally(() => setPermsLoading(false));
+  };
+
+  const handlePermToggle = async (perm: ConnectionPermission, field: keyof Pick<ConnectionPermission, "can_view" | "can_backup" | "can_restore" | "can_manage">) => {
+    setPermsSaving(perm.org_member_id);
+    const updated = { ...perm, [field]: !perm[field] };
+    try {
+      await api.put(`/connections/${perm.connection_id}/permissions`, {
+        org_member_id: perm.org_member_id,
+        can_view: updated.can_view,
+        can_backup: updated.can_backup,
+        can_restore: updated.can_restore,
+        can_manage: updated.can_manage,
+      });
+      setPermsList((prev) => prev.map((p) => p.org_member_id === perm.org_member_id ? updated : p));
+    } catch {
+      toast.error("Failed to update permission");
+    } finally {
+      setPermsSaving(null);
     }
   };
 
@@ -774,6 +822,15 @@ export default function ConnectionsPage() {
                     )}
                     {canManage && (
                       <button
+                        onClick={() => openPermsModal(conn)}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-emerald-500/30 hover:text-emerald-300"
+                      >
+                        <Shield className="h-3 w-3" />
+                        Permissions
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
                         onClick={() => handleDelete(conn.id)}
                         className="ml-auto rounded-lg p-1.5 text-slate-600 transition hover:bg-red-500/10 hover:text-red-400"
                       >
@@ -1134,6 +1191,83 @@ export default function ConnectionsPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Permissions Modal */}
+      <Dialog open={!!permsTarget} onOpenChange={(o) => { if (!o) setPermsTarget(null); }}>
+        <DialogContent
+          className="max-w-2xl text-white"
+          style={{ background: "#0d1526", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "1.25rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-grotesk text-lg font-semibold text-white flex items-center gap-2">
+              <Shield className="h-4 w-4 text-emerald-400" />
+              Connection Permissions — {permsTarget?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {permsLoading ? (
+            <div className="space-y-2 py-4">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full rounded-lg bg-white/[0.04]" />)}
+            </div>
+          ) : permsList.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">No org members found. Invite members first.</p>
+          ) : (
+            <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.08]">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/[0.08] bg-white/[0.03]">
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400">Member</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-medium text-slate-400">View</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-medium text-slate-400">Backup</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-medium text-slate-400">Restore</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-medium text-slate-400">Manage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {permsList.map((perm, idx) => {
+                    const isOwner = perm.role === "owner";
+                    const saving = permsSaving === perm.org_member_id;
+                    return (
+                      <tr key={perm.org_member_id} className={`border-b border-white/[0.04] ${idx % 2 === 0 ? "" : "bg-white/[0.02]"}`}>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-slate-200">{perm.name || perm.email}</span>
+                            {perm.name && <span className="text-xs text-slate-500">{perm.email}</span>}
+                          </div>
+                          <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            perm.role === "owner" ? "bg-yellow-500/15 text-yellow-400" :
+                            perm.role === "admin" ? "bg-purple-500/15 text-purple-400" :
+                            "bg-slate-500/15 text-slate-400"
+                          }`}>{perm.role}</span>
+                        </td>
+                        {(["can_view", "can_backup", "can_restore", "can_manage"] as const).map((field) => (
+                          <td key={field} className="px-3 py-3 text-center">
+                            {isOwner ? (
+                              <Check className="mx-auto h-4 w-4 text-emerald-400" />
+                            ) : (
+                              <button
+                                disabled={saving}
+                                onClick={() => handlePermToggle(perm, field)}
+                                className={`mx-auto flex h-6 w-6 items-center justify-center rounded transition ${
+                                  perm[field]
+                                    ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
+                                    : "bg-white/[0.05] text-slate-600 hover:bg-white/[0.1] hover:text-slate-400"
+                                } ${saving ? "opacity-40 cursor-wait" : ""}`}
+                              >
+                                {perm[field] ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-xs text-slate-500 mt-1">Owners always have full access. Changes save immediately.</p>
         </DialogContent>
       </Dialog>
     </div>
