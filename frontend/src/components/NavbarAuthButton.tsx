@@ -10,7 +10,7 @@ export default function NavbarAuthButton() {
     return (
       <Link
         href="/dashboard"
-        className="rounded-lg px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
+        className="whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 sm:px-5"
         style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
       >
         Go to Dashboard
@@ -21,7 +21,7 @@ export default function NavbarAuthButton() {
   return (
     <Link
       href="/login"
-      className="rounded-lg px-5 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90"
+      className="whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold text-[#0a0f1e] transition hover:opacity-90 sm:px-5"
       style={{ background: "linear-gradient(135deg, #00b4ff, #00f5d4)" }}
     >
       Sign In

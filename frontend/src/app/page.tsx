@@ -145,14 +145,14 @@ export default function LandingPage() {
 
       {/* Navbar */}
       <nav className="relative z-10 border-b border-white/[0.06]" style={{ backdropFilter: "blur(12px)", background: "rgba(10,15,30,0.8)" }}>
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2.5">
-            <img src="/logo-icon.png" alt="SnapBase" style={{height:"44px",width:"auto"}} />
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex shrink-0 items-center gap-2">
+            <img src="/logo-icon.png" alt="SnapBase" style={{height:"36px",width:"auto"}} />
             <span className="font-grotesk text-base font-semibold text-white">SnapBase</span>
           </div>
-          <div className="flex items-center gap-6">
-            <Link href="/pricing" className="text-sm text-slate-400 transition hover:text-white">Pricing</Link>
-            <Link href="/security" className="text-sm text-slate-400 transition hover:text-white">Security</Link>
+          <div className="flex items-center gap-4 sm:gap-6">
+            <Link href="/pricing" className="hidden text-sm text-slate-400 transition hover:text-white sm:block">Pricing</Link>
+            <Link href="/security" className="hidden text-sm text-slate-400 transition hover:text-white sm:block">Security</Link>
             <NavbarAuthButton />
           </div>
         </div>
