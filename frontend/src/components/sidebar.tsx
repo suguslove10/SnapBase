@@ -16,6 +16,7 @@ import {
   LogOut,
   Webhook,
   ArrowLeftRight,
+  Sparkles,
 } from "lucide-react";
 
 const navItems = [
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/backups",     label: "Backup History", icon: History },
   { href: "/webhooks",   label: "Webhooks",       icon: Webhook },
   { href: "/sync",       label: "DB Sync",         icon: ArrowLeftRight },
+  { href: "/insights",  label: "AI Insights",     icon: Sparkles },
   { href: "/anomalies",   label: "Anomalies",      icon: AlertTriangle },
   { href: "/storage",     label: "Storage",        icon: HardDrive },
   { href: "/billing",     label: "Billing",        icon: CreditCard },

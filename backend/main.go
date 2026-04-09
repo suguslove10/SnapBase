@@ -16,6 +16,7 @@ import (
 	"github.com/suguslove10/snapbase/retention"
 	"github.com/suguslove10/snapbase/scheduler"
 	"github.com/suguslove10/snapbase/storage"
+	"github.com/suguslove10/snapbase/insights"
 	syncpkg "github.com/suguslove10/snapbase/sync"
 )
 
@@ -85,6 +86,8 @@ func main() {
 	syncHandler := handlers.NewSyncHandler(db, syncRunner, sched)
 	syncHandler.LoadSchedules()
 
+	insightsHandler := &insights.Handler{DB: db, Cfg: cfg}
+
 	// Setup router
 	r := gin.Default()
 
@@ -135,6 +138,9 @@ func main() {
 		api.GET("/connections/hooks/summary", connHandler.HookSummary)
 		api.GET("/connections/:id/permissions", connHandler.GetPermissions)
 		api.PUT("/connections/:id/permissions", connHandler.UpdatePermissions)
+		api.GET("/connections/:id/insights", insightsHandler.Get)
+		api.POST("/connections/:id/insights/generate", insightsHandler.Generate)
+		api.GET("/insights", insightsHandler.List)
 
 		api.GET("/backups", backupHandler.List)
 		api.POST("/backups/trigger/:id", backupHandler.Trigger)

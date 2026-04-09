@@ -23,6 +23,7 @@ type Config struct {
 	EncryptionKey  string
 	RazorpayKeyID     string
 	RazorpayKeySecret string
+	AnthropicAPIKey   string
 }
 
 func Load() *Config {
@@ -47,6 +48,7 @@ func Load() *Config {
 		EncryptionKey:  getEnv("ENCRYPTION_KEY", ""),
 		RazorpayKeyID:     getEnv("RAZORPAY_KEY_ID", ""),
 		RazorpayKeySecret: getEnv("RAZORPAY_KEY_SECRET", ""),
+		AnthropicAPIKey:   getEnv("ANTHROPIC_API_KEY", ""),
 	}
 }
 

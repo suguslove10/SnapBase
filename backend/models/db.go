@@ -301,6 +301,14 @@ func createTables(db *sql.DB) {
 			created_at TIMESTAMP DEFAULT NOW(),
 			UNIQUE(connection_id, org_member_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS schema_insights (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE,
+			schema_snapshot TEXT,
+			insights JSONB,
+			model VARCHAR(100),
+			generated_at TIMESTAMP DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)
