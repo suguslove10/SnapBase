@@ -4,7 +4,7 @@ const INSTALL_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
 
 BINARY="snapbase"
-REPO="suguslove10/snapbase-cli"
+REPO="suguslove10/SnapBase"
 BASE_URL="https://github.com/\${REPO}/releases/latest/download"
 INSTALL_DIR="/usr/local/bin"
 
