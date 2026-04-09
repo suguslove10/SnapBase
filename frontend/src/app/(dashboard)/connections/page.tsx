@@ -764,7 +764,7 @@ export default function ConnectionsPage() {
 
                 {/* Actions */}
                 {(canManage || canTrigger) && (
-                  <div className="mt-4 flex items-center gap-2">
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     {canManage && (
                       <button
                         onClick={() => handleTest(conn.id)}
