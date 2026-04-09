@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { Users, UserPlus, Trash2, ChevronDown } from "lucide-react";
+import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -210,7 +211,7 @@ export default function TeamPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         {m.avatar_url ? (
-                          <img src={m.avatar_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                          <Image src={m.avatar_url} alt="" width={32} height={32} className="rounded-full object-cover" unoptimized />
                         ) : (
                           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-semibold text-slate-400">
                             {(m.name || m.email)[0].toUpperCase()}

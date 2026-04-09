@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export const metadata = { title: "Contact & Support – SnapBase" };
 
@@ -8,7 +9,7 @@ export default function ContactPage() {
       <div className="mx-auto max-w-3xl px-6 py-16">
         {/* Logo */}
         <Link href="/" className="mb-10 inline-flex items-center gap-2.5">
-          <img src="/logo-icon.png" alt="SnapBase" style={{height:"44px",width:"auto"}} />
+          <Image src="/logo-icon.png" alt="SnapBase" width={44} height={44} />
           <span className="font-grotesk text-lg font-semibold text-white">SnapBase</span>
         </Link>
 

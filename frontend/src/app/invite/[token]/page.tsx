@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import api from "@/lib/api";
 
 interface InviteInfo {
@@ -90,7 +91,7 @@ export default function InvitePage() {
         {/* Logo */}
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2.5">
-            <img src="/logo-icon.png" alt="SnapBase" style={{height:"44px",width:"auto"}} />
+            <Image src="/logo-icon.png" alt="SnapBase" width={44} height={44} />
             <span className="font-grotesk text-xl font-semibold text-white">SnapBase</span>
           </Link>
         </div>

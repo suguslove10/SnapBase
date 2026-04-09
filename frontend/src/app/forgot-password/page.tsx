@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
@@ -43,7 +44,7 @@ export default function ForgotPasswordPage() {
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2.5">
-            <img src="/logo-icon.png" alt="SnapBase" style={{ height: "44px", width: "auto" }} />
+            <Image src="/logo-icon.png" alt="SnapBase" width={44} height={44} />
             <span className="font-grotesk text-xl font-semibold text-white">SnapBase</span>
           </Link>
           <p className="mt-3 text-sm text-slate-400">Reset Password</p>
