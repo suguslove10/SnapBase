@@ -2,6 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
+import api from "@/lib/api";
 
 function CLIAuthContent() {
   const searchParams = useSearchParams();
@@ -21,21 +22,20 @@ function CLIAuthContent() {
 
   async function handleAuthorize() {
     setStatus("loading");
+    setErrorMsg("");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      setStatus("error");
+      setErrorMsg("You must be logged in to authorize the CLI. Please log in at getsnapbase.com first, then click the link from your terminal again.");
+      return;
+    }
     try {
-      const res = await fetch("/api/cli/auth/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poll_token: pollToken }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Authorization failed");
-      }
+      await api.post("/cli/auth/complete", { poll_token: pollToken });
       setStatus("success");
     } catch (err: unknown) {
       setStatus("error");
-      setErrorMsg(err instanceof Error ? err.message : "Authorization failed");
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setErrorMsg(msg ?? "Authorization failed. Please try again.");
     }
   }
 
@@ -85,7 +85,7 @@ function CLIAuthContent() {
             <div className="space-y-3">
               <button
                 onClick={handleAuthorize}
-                disabled={status === "loading" || status === "error"}
+                disabled={status === "loading"}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 px-4 rounded-lg transition-colors"
               >
                 {status === "loading" ? "Authorizing…" : "Authorize CLI Access"}
