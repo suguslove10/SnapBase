@@ -61,6 +61,11 @@ func (h *WebhookHandler) List(c *gin.Context) {
 }
 
 func (h *WebhookHandler) Create(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	if getUserPlan(h.DB, userID) == "free" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Webhooks are available on Pro and Team plans. Upgrade to unlock.", "upgrade_required": true})
+		return
+	}
 	orgIDRaw, ok := c.Get("org_id")
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No organization found"})

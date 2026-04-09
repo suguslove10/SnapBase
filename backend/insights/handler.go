@@ -71,8 +71,27 @@ func (h *Handler) Get(c *gin.Context) {
 }
 
 // Generate extracts the schema, calls Claude, stores and returns the result.
+func getUserPlan(db *sql.DB, userID int) string {
+	var plan, status string
+	err := db.QueryRow(
+		"SELECT plan, status FROM subscriptions WHERE user_id = $1 ORDER BY id DESC LIMIT 1",
+		userID,
+	).Scan(&plan, &status)
+	if err != nil {
+		return "free"
+	}
+	if status == "active" || status == "trialing" {
+		return plan
+	}
+	return "free"
+}
+
 func (h *Handler) Generate(c *gin.Context) {
 	userID := c.GetInt("user_id")
+	if plan := getUserPlan(h.DB, userID); plan == "free" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "AI Schema Insights are available on Pro and Team plans. Upgrade to unlock.", "upgrade_required": true})
+		return
+	}
 	connID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})

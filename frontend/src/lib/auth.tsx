@@ -17,6 +17,7 @@ interface AuthContextType {
   orgId: number | null;
   orgName: string | null;
   role: string | null;
+  plan: string;
   login: (token: string) => void;
   logout: () => void;
   isAuthenticated: boolean;
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   orgId: null,
   orgName: null,
   role: null,
+  plan: "free",
   login: () => {},
   logout: () => {},
   isAuthenticated: false,
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [orgId, setOrgId] = useState<number | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [plan, setPlan] = useState<string>("free");
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
@@ -55,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOrgName(res.data.org_name ?? null);
         setRole(res.data.role ?? null);
       }).catch(() => {});
+      api.get("/billing/usage").then((res) => {
+        setPlan(res.data.plan ?? "free");
+      }).catch(() => {});
     }
   }, []);
 
@@ -67,6 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrgName(res.data.org_name ?? null);
       setRole(res.data.role ?? null);
     }).catch(() => {});
+    api.get("/billing/usage").then((res) => {
+      setPlan(res.data.plan ?? "free");
+    }).catch(() => {});
   };
 
   const logout = () => {
@@ -76,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOrgId(null);
     setOrgName(null);
     setRole(null);
+    setPlan("free");
     router.push("/login");
   };
 
@@ -87,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (!mounted) return null;
 
   return (
-    <AuthContext.Provider value={{ token, email, orgId, orgName, role, login, logout, isAuthenticated: !!token, hasPermission }}>
+    <AuthContext.Provider value={{ token, email, orgId, orgName, role, plan, login, logout, isAuthenticated: !!token, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

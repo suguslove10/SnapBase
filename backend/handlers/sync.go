@@ -76,6 +76,11 @@ func (h *SyncHandler) List(c *gin.Context) {
 }
 
 func (h *SyncHandler) Create(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	if getUserPlan(h.DB, userID) != "team" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "DB Sync is available on the Team plan only. Upgrade to unlock.", "upgrade_required": true})
+		return
+	}
 	orgIDRaw, ok := c.Get("org_id")
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No organization found"})

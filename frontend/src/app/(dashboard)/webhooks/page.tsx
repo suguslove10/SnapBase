@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import Link from "next/link";
 
 const ALL_EVENTS = [
   { value: "backup.success", label: "Backup Success" },
@@ -65,6 +67,7 @@ const inputClass =
   "rounded-xl border-white/[0.08] bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-[#6366f1]/50 focus:ring-[#6366f1]/20";
 
 export default function WebhooksPage() {
+  const { plan } = useAuth();
   const [items, setItems] = useState<WebhookItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -199,6 +202,12 @@ export default function WebhooksPage() {
 
   return (
     <div className="space-y-6">
+      {plan === "free" && (
+        <div className="flex items-center justify-between rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">
+          <p className="text-sm text-yellow-300">Webhooks are available on <strong>Pro</strong> and <strong>Team</strong> plans.</p>
+          <Link href="/billing" className="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-yellow-400 transition">Upgrade</Link>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

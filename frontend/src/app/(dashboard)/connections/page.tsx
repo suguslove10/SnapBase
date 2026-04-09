@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import Link from "next/link";
 import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil, Cog, Shield, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -143,7 +144,7 @@ function healthTooltip(h: ConnHealth): string {
 }
 
 export default function ConnectionsPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, plan } = useAuth();
   const canManage = hasPermission("manage_connections");
   const canTrigger = hasPermission("trigger_backup");
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -802,32 +803,46 @@ export default function ConnectionsPage() {
                       </button>
                     )}
                     {canManage && (
-                      <button
-                        onClick={() => openHooksModal(conn)}
-                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-amber-500/30 hover:text-amber-300"
-                      >
-                        <Cog className="h-3 w-3" />
-                        Hooks
-                        {hookSummary[conn.id] && (
-                          <span className="ml-0.5 flex gap-1">
-                            {hookSummary[conn.id].has_pre && (
-                              <span className="rounded bg-amber-500/15 px-1 font-jetbrains text-[9px] text-amber-400">PRE</span>
-                            )}
-                            {hookSummary[conn.id].has_post && (
-                              <span className="rounded bg-blue-500/15 px-1 font-jetbrains text-[9px] text-blue-400">POST</span>
-                            )}
-                          </span>
-                        )}
-                      </button>
+                      plan === "free" ? (
+                        <Link href="/billing" className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-600 cursor-not-allowed" title="Pro plan required">
+                          <Lock className="h-3 w-3" />
+                          Hooks
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => openHooksModal(conn)}
+                          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-amber-500/30 hover:text-amber-300"
+                        >
+                          <Cog className="h-3 w-3" />
+                          Hooks
+                          {hookSummary[conn.id] && (
+                            <span className="ml-0.5 flex gap-1">
+                              {hookSummary[conn.id].has_pre && (
+                                <span className="rounded bg-amber-500/15 px-1 font-jetbrains text-[9px] text-amber-400">PRE</span>
+                              )}
+                              {hookSummary[conn.id].has_post && (
+                                <span className="rounded bg-blue-500/15 px-1 font-jetbrains text-[9px] text-blue-400">POST</span>
+                              )}
+                            </span>
+                          )}
+                        </button>
+                      )
                     )}
                     {canManage && (
-                      <button
-                        onClick={() => openPermsModal(conn)}
-                        className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-emerald-500/30 hover:text-emerald-300"
-                      >
-                        <Shield className="h-3 w-3" />
-                        Permissions
-                      </button>
+                      plan !== "team" ? (
+                        <Link href="/billing" className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-600 cursor-not-allowed" title="Team plan required">
+                          <Lock className="h-3 w-3" />
+                          Permissions
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => openPermsModal(conn)}
+                          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-emerald-500/30 hover:text-emerald-300"
+                        >
+                          <Shield className="h-3 w-3" />
+                          Permissions
+                        </button>
+                      )
                     )}
                     {canManage && (
                       <button

@@ -760,6 +760,10 @@ func (h *ConnectionHandler) ListHooks(c *gin.Context) {
 
 func (h *ConnectionHandler) CreateHook(c *gin.Context) {
 	userID := c.GetInt("user_id")
+	if getUserPlan(h.DB, userID) == "free" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Backup Hooks are available on Pro and Team plans. Upgrade to unlock.", "upgrade_required": true})
+		return
+	}
 	connID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
@@ -1003,6 +1007,10 @@ func (h *ConnectionHandler) GetPermissions(c *gin.Context) {
 // UpdatePermissions upserts the permission row for one org member on a connection.
 func (h *ConnectionHandler) UpdatePermissions(c *gin.Context) {
 	userID := c.GetInt("user_id")
+	if getUserPlan(h.DB, userID) != "team" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Connection Permissions are available on the Team plan only. Upgrade to unlock.", "upgrade_required": true})
+		return
+	}
 	connID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})

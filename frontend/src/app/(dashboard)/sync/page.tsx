@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import Link from "next/link";
 
 interface Connection {
   id: number;
@@ -109,6 +111,7 @@ const dbColors: Record<string, string> = {
 };
 
 export default function SyncPage() {
+  const { plan } = useAuth();
   const [jobs, setJobs] = useState<SyncJob[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -256,6 +259,12 @@ export default function SyncPage() {
 
   return (
     <div className="space-y-6">
+      {plan !== "team" && (
+        <div className="flex items-center justify-between rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">
+          <p className="text-sm text-yellow-300">DB Sync is available on the <strong>Team</strong> plan only.</p>
+          <Link href="/billing" className="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-yellow-400 transition">Upgrade</Link>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
