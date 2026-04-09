@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   Database, Clock, Cloud, Mail, Lock, Download,
-  ShieldCheck, Zap, Webhook, GitBranch, Terminal,
+  ShieldCheck, Zap, Webhook, Terminal,
   Shield, Sparkles, Cog, ArrowLeftRight,
 } from "lucide-react";
 import NavbarAuthButton from "@/components/NavbarAuthButton";
