@@ -92,8 +92,8 @@ func (h *Handler) Generate(c *gin.Context) {
 		return
 	}
 
-	// Call Claude
-	result, err := AnalyzeSchema(h.Cfg.AnthropicAPIKey, schema)
+	// Call OpenAI
+	result, err := AnalyzeSchema(h.Cfg.OpenAIAPIKey, schema)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "AI analysis failed: " + err.Error()})
 		return
@@ -109,7 +109,7 @@ func (h *Handler) Generate(c *gin.Context) {
 	err = h.DB.QueryRow(`
 		INSERT INTO schema_insights (connection_id, schema_snapshot, insights, model)
 		VALUES ($1, $2, $3, $4) RETURNING id
-	`, connID, schema, insightsJSON, claudeModel).Scan(&siID)
+	`, connID, schema, insightsJSON, aiModel).Scan(&siID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store insights"})
 		return
@@ -124,7 +124,7 @@ func (h *Handler) Generate(c *gin.Context) {
 			ConnectionType: conn.Type,
 			SchemaSnapshot: schema,
 			Insights:       result,
-			Model:          claudeModel,
+			Model:          aiModel,
 			GeneratedAt:    time.Now(),
 		},
 	})

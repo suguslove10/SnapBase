@@ -10,18 +10,18 @@ import (
 )
 
 const (
-	claudeModel   = "claude-haiku-4-5-20251001"
-	claudeAPIURL  = "https://api.anthropic.com/v1/messages"
-	anthropicVer  = "2023-06-01"
+	// Using GPT-4o-mini — fast, cheap, great for structured JSON output.
+	aiModel  = "gpt-4o-mini"
+	openAIURL = "https://api.openai.com/v1/chat/completions"
 )
 
 // InsightResult is the structured response stored in the DB and returned to the frontend.
 type InsightResult struct {
-	Summary         string               `json:"summary"`
-	HealthScore     int                  `json:"health_score"`
-	Tables          []TableInsight       `json:"tables"`
-	Recommendations []Recommendation     `json:"recommendations"`
-	Anomalies       []Anomaly            `json:"anomalies"`
+	Summary         string           `json:"summary"`
+	HealthScore     int              `json:"health_score"`
+	Tables          []TableInsight   `json:"tables"`
+	Recommendations []Recommendation `json:"recommendations"`
+	Anomalies       []Anomaly        `json:"anomalies"`
 }
 
 type TableInsight struct {
@@ -42,35 +42,32 @@ type Anomaly struct {
 	Severity    string `json:"severity"` // warning, error
 }
 
-type claudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	Messages  []claudeMessage `json:"messages"`
-	System    string          `json:"system"`
+type openAIRequest struct {
+	Model          string          `json:"model"`
+	Messages       []openAIMessage `json:"messages"`
+	MaxTokens      int             `json:"max_tokens"`
+	ResponseFormat struct {
+		Type string `json:"type"`
+	} `json:"response_format"`
 }
 
-type claudeMessage struct {
+type openAIMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type claudeResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
+type openAIResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// AnalyzeSchema calls Claude and returns structured insights for the given schema string.
-func AnalyzeSchema(apiKey, schema string) (*InsightResult, error) {
-	if apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY is not configured")
-	}
-
-	systemPrompt := `You are an expert database architect. Analyze the provided database schema and return a JSON object with actionable insights. Your response must be valid JSON only — no markdown, no extra text.
+const systemPrompt = `You are an expert database architect. Analyze the provided database schema and return a JSON object with actionable insights. Your response must be valid JSON only — no markdown, no extra text.
 
 Required JSON structure:
 {
@@ -89,32 +86,38 @@ Required JSON structure:
 
 Focus on: missing indexes, naming inconsistencies, security risks (e.g. storing plaintext secrets), missing foreign keys, tables with no timestamps, very wide tables, potential N+1 patterns from lack of indexes.`
 
-	userMsg := fmt.Sprintf("Analyze this database schema:\n\n%s", schema)
-
-	reqBody := claudeRequest{
-		Model:     claudeModel,
-		MaxTokens: 2048,
-		System:    systemPrompt,
-		Messages:  []claudeMessage{{Role: "user", Content: userMsg}},
+// AnalyzeSchema calls OpenAI and returns structured insights for the given schema string.
+func AnalyzeSchema(apiKey, schema string) (*InsightResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY is not configured")
 	}
+
+	reqBody := openAIRequest{
+		Model:     aiModel,
+		MaxTokens: 2048,
+		Messages: []openAIMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: fmt.Sprintf("Analyze this database schema:\n\n%s", schema)},
+		},
+	}
+	reqBody.ResponseFormat.Type = "json_object"
 
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequest("POST", claudeAPIURL, bytes.NewReader(bodyBytes))
+	httpReq, err := http.NewRequest("POST", openAIURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicVer)
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("claude api request failed: %w", err)
+		return nil, fmt.Errorf("openai api request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -123,23 +126,23 @@ Focus on: missing indexes, naming inconsistencies, security risks (e.g. storing 
 		return nil, err
 	}
 
-	var claudeResp claudeResponse
-	if err := json.Unmarshal(respBytes, &claudeResp); err != nil {
-		return nil, fmt.Errorf("failed to parse claude response: %w", err)
+	var oaResp openAIResponse
+	if err := json.Unmarshal(respBytes, &oaResp); err != nil {
+		return nil, fmt.Errorf("failed to parse openai response: %w", err)
 	}
 
-	if claudeResp.Error != nil {
-		return nil, fmt.Errorf("claude api error: %s", claudeResp.Error.Message)
+	if oaResp.Error != nil {
+		return nil, fmt.Errorf("openai api error: %s", oaResp.Error.Message)
 	}
-	if len(claudeResp.Content) == 0 {
-		return nil, fmt.Errorf("claude returned empty response")
+	if len(oaResp.Choices) == 0 {
+		return nil, fmt.Errorf("openai returned empty response")
 	}
 
-	text := claudeResp.Content[0].Text
+	text := oaResp.Choices[0].Message.Content
 
 	var result InsightResult
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
-		return nil, fmt.Errorf("claude response is not valid JSON: %w\nraw: %s", err, text)
+		return nil, fmt.Errorf("response is not valid JSON: %w\nraw: %s", err, text)
 	}
 
 	return &result, nil
