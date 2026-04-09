@@ -10,6 +10,7 @@ import {
   Webhook,
   CheckCircle,
   XCircle,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
@@ -216,14 +217,21 @@ export default function WebhooksPage() {
             Receive real-time HTTP notifications for backup and org events.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-          style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-        >
-          <Plus className="h-4 w-4" />
-          Add Webhook
-        </button>
+        {plan === "free" ? (
+          <Link href="/billing" className="flex items-center gap-2 rounded-xl border border-white/[0.08] px-4 py-2 text-sm font-semibold text-slate-400 transition hover:text-white">
+            <Lock className="h-4 w-4" />
+            Add Webhook
+          </Link>
+        ) : (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+          >
+            <Plus className="h-4 w-4" />
+            Add Webhook
+          </button>
+        )}
       </div>
 
       {/* List */}
@@ -243,13 +251,23 @@ export default function WebhooksPage() {
           <p className="text-xs text-slate-500">
             Add a webhook to receive HTTP notifications for backup events.
           </p>
-          <button
-            onClick={openCreate}
-            className="mt-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-          >
-            Add Webhook
-          </button>
+          {plan === "free" ? (
+            <Link
+              href="/billing"
+              className="mt-2 flex items-center gap-2 rounded-xl border border-white/[0.08] px-4 py-2 text-sm font-semibold text-slate-400 transition hover:text-white"
+            >
+              <Lock className="h-4 w-4" />
+              Upgrade to Pro
+            </Link>
+          ) : (
+            <button
+              onClick={openCreate}
+              className="mt-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+            >
+              Add Webhook
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
