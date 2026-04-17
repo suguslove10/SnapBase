@@ -61,10 +61,14 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	// Decrypt backup encryption key if present
 	var backupEncKey string
-	if isEncrypted && encKeyEnc != "" {
+	if isEncrypted {
+		if encKeyEnc == "" {
+			send("error", "Backup is marked as encrypted but no encryption key is stored for this connection. The key may have been removed after the backup was created.")
+			return
+		}
 		plain, decErr := crypto.Decrypt(encKeyEnc)
 		if decErr != nil {
-			send("error", "Failed to decrypt backup encryption key")
+			send("error", "Failed to decrypt backup encryption key — it may have been rotated or corrupted.")
 			return
 		}
 		backupEncKey = plain
@@ -97,16 +101,32 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 		r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
 		return
 	}
-	io.Copy(f, obj)
+	n, copyErr := io.Copy(f, obj)
 	f.Close()
+	if copyErr != nil {
+		send("error", fmt.Sprintf("Failed to download backup from storage: %v", copyErr))
+		r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
+		return
+	}
+	if n == 0 {
+		send("error", "Backup file is empty in storage — the object may be missing or corrupted. Please re-run the backup.")
+		r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
+		return
+	}
 
 	// Decrypt if backup was encrypted
 	if isEncrypted {
+		// Minimum valid encrypted file: 12-byte nonce + 16-byte GCM tag = 28 bytes
+		if n < 28 {
+			send("error", fmt.Sprintf("Encrypted backup file is too small (%d bytes) — it is likely corrupted. Please re-run the backup.", n))
+			r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
+			return
+		}
 		send("log", "Decrypting backup file (AES-256-GCM)...")
 		decryptedGz := tmpGz + ".dec"
 		defer os.Remove(decryptedGz)
 		if err := crypto.DecryptFile(tmpGz, decryptedGz, backupEncKey); err != nil {
-			send("error", fmt.Sprintf("Failed to decrypt backup: %v", err))
+			send("error", fmt.Sprintf("Failed to decrypt backup: %v — ensure the connection's encryption key has not changed since this backup was created.", err))
 			r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)
 			return
 		}
