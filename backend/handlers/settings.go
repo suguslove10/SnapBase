@@ -70,7 +70,7 @@ func (h *SettingsHandler) ChangePassword(c *gin.Context) {
 func (h *SettingsHandler) GetNotificationSettings(c *gin.Context) {
 	userID := c.GetInt("user_id")
 
-	keys := []string{"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "notifications_enabled", "slack_webhook_url"}
+	keys := []string{"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "notifications_enabled", "slack_webhook_url", "discord_webhook_url"}
 	settings := make(map[string]string)
 
 	for _, key := range keys {
@@ -94,13 +94,14 @@ func (h *SettingsHandler) UpdateNotificationSettings(c *gin.Context) {
 	userID := c.GetInt("user_id")
 
 	var req struct {
-		SMTPHost        string `json:"smtp_host"`
-		SMTPPort        string `json:"smtp_port"`
-		SMTPUser        string `json:"smtp_username"`
-		SMTPPass        string `json:"smtp_password"`
-		SMTPFrom        string `json:"smtp_from"`
-		Enabled         bool   `json:"enabled"`
-		SlackWebhookURL string `json:"slack_webhook_url"`
+		SMTPHost          string `json:"smtp_host"`
+		SMTPPort          string `json:"smtp_port"`
+		SMTPUser          string `json:"smtp_username"`
+		SMTPPass          string `json:"smtp_password"`
+		SMTPFrom          string `json:"smtp_from"`
+		Enabled           bool   `json:"enabled"`
+		SlackWebhookURL   string `json:"slack_webhook_url"`
+		DiscordWebhookURL string `json:"discord_webhook_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -114,6 +115,7 @@ func (h *SettingsHandler) UpdateNotificationSettings(c *gin.Context) {
 		"smtp_from":             req.SMTPFrom,
 		"notifications_enabled": fmt.Sprintf("%t", req.Enabled),
 		"slack_webhook_url":     req.SlackWebhookURL,
+		"discord_webhook_url":   req.DiscordWebhookURL,
 	}
 	// Only update password if it's not the masked value
 	if req.SMTPPass != "" && req.SMTPPass != "••••••••" {
@@ -196,9 +198,47 @@ func (h *SettingsHandler) GetStorageInfo(c *gin.Context) {
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE dc.user_id = $1 AND b.status = 'success'`, userID).Scan(&storageUsed)
 
+	// Per-connection breakdown
+	type connUsage struct {
+		ID          int    `json:"id"`
+		Name        string `json:"name"`
+		DBType      string `json:"db_type"`
+		BackupCount int    `json:"backup_count"`
+		SizeBytes   int64  `json:"size_bytes"`
+		LastBackup  string `json:"last_backup"`
+	}
+	rows, _ := h.DB.Query(`
+		SELECT dc.id, dc.name, dc.type,
+			COUNT(b.id),
+			COALESCE(SUM(b.size_bytes), 0),
+			COALESCE(MAX(b.started_at)::text, '')
+		FROM db_connections dc
+		LEFT JOIN backup_jobs b ON b.connection_id = dc.id AND b.status = 'success'
+		WHERE dc.user_id = $1
+		GROUP BY dc.id, dc.name, dc.type
+		ORDER BY COALESCE(SUM(b.size_bytes), 0) DESC`, userID)
+	var byConnection []connUsage
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var cu connUsage
+			rows.Scan(&cu.ID, &cu.Name, &cu.DBType, &cu.BackupCount, &cu.SizeBytes, &cu.LastBackup)
+			byConnection = append(byConnection, cu)
+		}
+	}
+	if byConnection == nil {
+		byConnection = []connUsage{}
+	}
+
+	plan := getUserPlan(h.DB, userID)
+	storageLimit := GetStorageLimit(plan)
+
 	c.JSON(http.StatusOK, gin.H{
-		"total_backups": totalBackups,
-		"storage_used":  storageUsed,
+		"total_backups":  totalBackups,
+		"storage_used":   storageUsed,
+		"storage_limit":  storageLimit,
+		"plan":           plan,
+		"by_connection":  byConnection,
 		"minio_endpoint": h.Cfg.MinioEndpoint,
 		"bucket":         h.Cfg.MinioBucket,
 	})
@@ -225,4 +265,27 @@ func (h *SettingsHandler) TestSlack(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Test Slack message sent"})
+}
+
+// TestDiscord handles POST /api/settings/discord/test
+func (h *SettingsHandler) TestDiscord(c *gin.Context) {
+	userID := c.GetInt("user_id")
+
+	var webhookURL string
+	err := h.DB.QueryRow("SELECT value FROM settings WHERE user_id = $1 AND key = 'discord_webhook_url'", userID).Scan(&webhookURL)
+	if err != nil || webhookURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Discord webhook URL not configured. Save settings first."})
+		return
+	}
+
+	notifications.SendDiscordNotification(webhookURL, notifications.BackupNotification{
+		ConnectionName: "Test Database",
+		ConnectionType: "postgres",
+		Status:         "success",
+		SizeBytes:      1024 * 1024,
+		Duration:       5 * time.Second,
+		Timestamp:      time.Now(),
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "Test Discord message sent"})
 }

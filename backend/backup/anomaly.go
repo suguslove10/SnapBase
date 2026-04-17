@@ -27,9 +27,19 @@ func (a *AnomalyDetector) DetectAnomalies(connectionID int, backupJobID int, cur
 		return anomalies
 	}
 
+	// Load per-connection thresholds (fall back to defaults)
+	dropThreshold := 0.5
+	spikeThreshold := 3.0
+	var d, s float64
+	if err := a.DB.QueryRow(
+		"SELECT size_drop_threshold, size_spike_threshold FROM anomaly_settings WHERE connection_id = $1", connectionID,
+	).Scan(&d, &s); err == nil {
+		dropThreshold, spikeThreshold = d, s
+	}
+
 	ratio := float64(currentSize) / float64(avgSize)
 
-	if ratio < 0.5 {
+	if ratio < dropThreshold {
 		anomalies = append(anomalies, Anomaly{
 			Type:     "size_too_small",
 			Message:  fmt.Sprintf("Backup unusually small (%.1f%% of average) — possible data loss", ratio*100),
@@ -37,7 +47,7 @@ func (a *AnomalyDetector) DetectAnomalies(connectionID int, backupJobID int, cur
 		})
 	}
 
-	if ratio > 3.0 {
+	if ratio > spikeThreshold {
 		anomalies = append(anomalies, Anomaly{
 			Type:     "size_too_large",
 			Message:  fmt.Sprintf("Backup unusually large (%.0f%% of average) — unexpected data growth", ratio*100),

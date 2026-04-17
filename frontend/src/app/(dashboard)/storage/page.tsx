@@ -58,8 +58,24 @@ const cardStyle = {
 const inputClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white placeholder:text-slate-600 focus:border-[#00b4ff]/50";
 const selectClass = "rounded-xl border-white/[0.08] bg-white/[0.04] text-white";
 
+interface StorageUsage {
+  total_backups: number;
+  storage_used: number;
+  storage_limit: number;
+  plan: string;
+  by_connection: { id: number; name: string; db_type: string; backup_count: number; size_bytes: number; last_backup: string }[];
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return "0 B";
+  const k = 1024, sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return (bytes / Math.pow(k, i)).toFixed(2) + " " + sizes[i];
+}
+
 export default function StoragePage() {
   const [providers, setProviders] = useState<StorageProvider[]>([]);
+  const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -72,7 +88,10 @@ export default function StoragePage() {
     api.get("/storage-providers").then((res) => { setProviders(res.data); setLoading(false); });
   };
 
-  useEffect(() => { fetchProviders(); }, []);
+  useEffect(() => {
+    fetchProviders();
+    api.get("/storage/usage").then((res) => setUsage(res.data)).catch(() => {});
+  }, []);
 
   const handleTypeChange = (type: string) => {
     const hints = providerHints[type] || {};
@@ -138,13 +157,62 @@ export default function StoragePage() {
   const needsEndpoint = ["r2", "b2", "minio"].includes(form.provider_type);
   const needsRegion = ["s3", "b2", "spaces", "wasabi"].includes(form.provider_type);
 
+  const usedPct = usage ? Math.min(100, (usage.storage_used / usage.storage_limit) * 100) : 0;
+  const barColor = usedPct > 90 ? "#f87171" : usedPct > 70 ? "#fbbf24" : "#00b4ff";
+
   return (
     <div className="space-y-6">
+      <div>
+        <h1 className="font-grotesk text-2xl font-bold text-white">Storage</h1>
+        <p className="mt-1 text-sm text-slate-500">Manage storage providers and monitor backup usage</p>
+      </div>
+
+      {/* Usage overview */}
+      {usage && (
+        <div className="rounded-2xl p-5" style={{ background: "rgba(13,21,38,0.8)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="font-grotesk text-sm font-semibold text-white">Storage Usage</p>
+              <p className="mt-0.5 text-xs text-slate-500 capitalize">{usage.plan} plan · {usage.total_backups} backups</p>
+            </div>
+            <div className="text-right">
+              <p className="font-grotesk text-lg font-bold text-white">{formatBytes(usage.storage_used)}</p>
+              <p className="text-xs text-slate-500">of {formatBytes(usage.storage_limit)}</p>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${usedPct}%`, background: barColor }} />
+          </div>
+          <p className="mt-1.5 text-right font-jetbrains text-[10px] text-slate-600">{usedPct.toFixed(1)}% used</p>
+
+          {/* Per-connection breakdown */}
+          {usage.by_connection.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-600">By Connection</p>
+              {usage.by_connection.map((c) => {
+                const pct = usage.storage_used > 0 ? (c.size_bytes / usage.storage_used) * 100 : 0;
+                return (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <span className="w-32 truncate text-xs text-slate-400">{c.name}</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-white/[0.06]">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#6366f1" }} />
+                    </div>
+                    <span className="w-16 text-right font-jetbrains text-[10px] text-slate-500">{formatBytes(c.size_bytes)}</span>
+                    <span className="w-12 text-right font-jetbrains text-[10px] text-slate-600">{c.backup_count} bkps</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-grotesk text-2xl font-bold text-white">Storage Providers</h1>
-          <p className="mt-1 text-sm text-slate-500">Manage where your backups are stored</p>
+          <p className="font-grotesk text-lg font-semibold text-white">Storage Providers</p>
+          <p className="mt-0.5 text-sm text-slate-500">Configure where backups are stored</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -330,6 +331,101 @@ func (h *SyncHandler) Runs(c *gin.Context) {
 		list = []RunRow{}
 	}
 	c.JSON(http.StatusOK, list)
+}
+
+// Preview returns a comparison of source vs target table row counts for a sync job.
+func (h *SyncHandler) Preview(c *gin.Context) {
+	orgIDRaw, ok := c.Get("org_id")
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No organization found"})
+		return
+	}
+	orgID := orgIDRaw.(int)
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	// Fetch source and target connection details
+	var srcHost, srcUser, srcPass, srcDB, srcType string
+	var srcPort int
+	var tgtHost, tgtUser, tgtPass, tgtDB, tgtType string
+	var tgtPort int
+	err = h.DB.QueryRow(`
+		SELECT sc.host, sc.port, sc.username, sc.password_encrypted, sc.database_name, sc.type,
+		       tc.host, tc.port, tc.username, tc.password_encrypted, tc.database_name, tc.type
+		FROM sync_jobs sj
+		JOIN db_connections sc ON sc.id = sj.source_connection_id
+		JOIN db_connections tc ON tc.id = sj.target_connection_id
+		WHERE sj.id = $1 AND sj.org_id = $2`, id, orgID,
+	).Scan(&srcHost, &srcPort, &srcUser, &srcPass, &srcDB, &srcType,
+		&tgtHost, &tgtPort, &tgtUser, &tgtPass, &tgtDB, &tgtType)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Sync job not found"})
+		return
+	}
+
+	type TableDiff struct {
+		Table      string `json:"table"`
+		SourceRows int64  `json:"source_rows"`
+		TargetRows int64  `json:"target_rows"`
+		Diff       int64  `json:"diff"`
+	}
+
+	// For now only Postgres→Postgres diff is supported
+	if srcType != "postgres" || tgtType != "postgres" {
+		c.JSON(http.StatusOK, gin.H{
+			"supported": false,
+			"message":   "Preview is currently only available for PostgreSQL→PostgreSQL sync jobs.",
+		})
+		return
+	}
+
+	getTableCounts := func(host string, port int, user, pass, dbName string) (map[string]int64, error) {
+		dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable connect_timeout=5",
+			host, port, user, pass, dbName)
+		db, err := sql.Open("postgres", dsn)
+		if err != nil { return nil, err }
+		defer db.Close()
+		if err := db.Ping(); err != nil { return nil, err }
+		rows, err := db.Query(`
+			SELECT relname, reltuples::bigint
+			FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public' AND c.relkind = 'r'`)
+		if err != nil { return nil, err }
+		defer rows.Close()
+		counts := map[string]int64{}
+		for rows.Next() {
+			var name string; var n int64
+			if err := rows.Scan(&name, &n); err == nil { counts[name] = n }
+		}
+		return counts, nil
+	}
+
+	srcCounts, err := getTableCounts(srcHost, srcPort, srcUser, srcPass, srcDB)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Cannot connect to source: " + err.Error()})
+		return
+	}
+	tgtCounts, err := getTableCounts(tgtHost, tgtPort, tgtUser, tgtPass, tgtDB)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Cannot connect to target: " + err.Error()})
+		return
+	}
+
+	all := map[string]bool{}
+	for t := range srcCounts { all[t] = true }
+	for t := range tgtCounts { all[t] = true }
+
+	var diffs []TableDiff
+	for t := range all {
+		s, tgt := srcCounts[t], tgtCounts[t]
+		diffs = append(diffs, TableDiff{Table: t, SourceRows: s, TargetRows: tgt, Diff: s - tgt})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"supported": true, "tables": diffs, "source_db": srcDB, "target_db": tgtDB})
 }
 
 // LoadSchedules registers all enabled sync jobs with schedules into the cron scheduler.

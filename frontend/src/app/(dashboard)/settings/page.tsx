@@ -80,9 +80,11 @@ export default function SettingsPage() {
   const [smtpPassword, setSmtpPassword] = useState("");
   const [smtpFrom, setSmtpFrom] = useState("");
   const [slackWebhook, setSlackWebhook] = useState("");
+  const [discordWebhook, setDiscordWebhook] = useState("");
   const [savingNotif, setSavingNotif] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const [testingSlack, setTestingSlack] = useState(false);
+  const [testingDiscord, setTestingDiscord] = useState(false);
   const [reportFrom, setReportFrom] = useState("");
   const [reportTo, setReportTo] = useState("");
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -104,7 +106,7 @@ export default function SettingsPage() {
       setNotifEnabled(s.notifications_enabled === "true");
       setSmtpHost(s.smtp_host || ""); setSmtpPort(s.smtp_port || "587");
       setSmtpUsername(s.smtp_username || ""); setSmtpPassword(s.smtp_password || "");
-      setSmtpFrom(s.smtp_from || ""); setSlackWebhook(s.slack_webhook_url || "");
+      setSmtpFrom(s.smtp_from || ""); setSlackWebhook(s.slack_webhook_url || ""); setDiscordWebhook(s.discord_webhook_url || "");
     }).catch(() => {});
     api.get("/settings/storage").then((res) => setStorageInfo(res.data)).catch(() => {});
     api.get("/audit?page=1").then((res) => { setAuditLogs(res.data.logs || []); setAuditLoading(false); }).catch(() => setAuditLoading(false));
@@ -133,6 +135,7 @@ export default function SettingsPage() {
         smtp_host: smtpHost, smtp_port: smtpPort, smtp_username: smtpUsername,
         smtp_password: smtpPassword, smtp_from: smtpFrom, enabled: notifEnabled,
         slack_webhook_url: slackWebhook,
+        discord_webhook_url: discordWebhook,
       });
       toast.success("Notification settings saved");
     } catch { toast.error("Failed to save settings"); }
@@ -157,6 +160,16 @@ export default function SettingsPage() {
     } catch (err: unknown) {
       toast.error((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to send Slack message");
     } finally { setTestingSlack(false); }
+  };
+
+  const handleTestDiscord = async () => {
+    setTestingDiscord(true);
+    try {
+      await api.post("/settings/discord/test");
+      toast.success("Test Discord message sent");
+    } catch (err: unknown) {
+      toast.error((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to send Discord message");
+    } finally { setTestingDiscord(false); }
   };
 
   const handleGenerateReport = async () => {
@@ -298,6 +311,22 @@ export default function SettingsPage() {
           <div className="flex gap-3">
             <PrimaryBtn onClick={handleNotifSave} disabled={savingNotif}>{savingNotif ? "Saving…" : "Save"}</PrimaryBtn>
             <OutlineBtn onClick={handleTestSlack} disabled={testingSlack}>{testingSlack ? "Sending…" : "Send Test Message"}</OutlineBtn>
+          </div>
+        </div>
+      </div>
+
+      {/* Discord */}
+      <div style={sectionStyle}>
+        <SectionHeader title="Discord Notifications" desc="Get backup alerts in your Discord server" />
+        <div className="space-y-4 p-6">
+          <div className="max-w-lg space-y-1.5">
+            <FieldLabel>Webhook URL</FieldLabel>
+            <Input value={discordWebhook} onChange={(e) => setDiscordWebhook(e.target.value)} placeholder="https://discord.com/api/webhooks/…" className={inputClass} />
+            <p className="font-jetbrains text-[11px] text-slate-600">Create a webhook in Discord: Server Settings → Integrations → Webhooks.</p>
+          </div>
+          <div className="flex gap-3">
+            <PrimaryBtn onClick={handleNotifSave} disabled={savingNotif}>{savingNotif ? "Saving…" : "Save"}</PrimaryBtn>
+            <OutlineBtn onClick={handleTestDiscord} disabled={testingDiscord}>{testingDiscord ? "Sending…" : "Send Test Message"}</OutlineBtn>
           </div>
         </div>
       </div>

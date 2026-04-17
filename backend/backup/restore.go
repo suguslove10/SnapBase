@@ -159,11 +159,17 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	case "mysql":
 		send("log", fmt.Sprintf("Restoring MySQL database %s on %s:%d...", dbName, host, port))
+		credsFile, cleanupCreds, credErr := mysqlDefaultsFile(passwordEnc)
+		if credErr != nil {
+			send("error", fmt.Sprintf("Failed to prepare MySQL credentials: %v", credErr))
+			return
+		}
+		defer cleanupCreds()
 		cmd = exec.Command("mysql",
+			"--defaults-file="+credsFile,
 			"-h", host,
 			"-P", fmt.Sprintf("%d", port),
 			"-u", username,
-			fmt.Sprintf("-p%s", passwordEnc),
 			dbName,
 		)
 		stdinFile, _ := os.Open(tmpSQL)

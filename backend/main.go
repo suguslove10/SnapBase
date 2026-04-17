@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -11,12 +12,13 @@ import (
 	"github.com/suguslove10/snapbase/config"
 	"github.com/suguslove10/snapbase/crypto"
 	"github.com/suguslove10/snapbase/handlers"
+	"github.com/suguslove10/snapbase/insights"
+	"github.com/suguslove10/snapbase/middleware"
 	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/notifications"
 	"github.com/suguslove10/snapbase/retention"
 	"github.com/suguslove10/snapbase/scheduler"
 	"github.com/suguslove10/snapbase/storage"
-	"github.com/suguslove10/snapbase/insights"
 	syncpkg "github.com/suguslove10/snapbase/sync"
 )
 
@@ -55,6 +57,7 @@ func main() {
 
 	// Initialize backup runner
 	runner := &backup.Runner{DB: db, Cfg: cfg, Storage: store, EmailConfig: emailCfg, Verifier: verifier, AnomalyDetector: anomalyDetector}
+	backupQueue := backup.NewQueue(runner)
 
 	// Initialize retention cleaner
 	cleaner := &retention.Cleaner{DB: db, Storage: store}
@@ -70,7 +73,7 @@ func main() {
 	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger, EmailConfig: emailCfg}
 	connHandler := &handlers.ConnectionHandler{DB: db, AuditLogger: auditLogger}
 	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store}
-	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
+	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, Queue: backupQueue, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
 	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched, AuditLogger: auditLogger}
 	settingsHandler := &handlers.SettingsHandler{DB: db, Cfg: cfg, Storage: store}
 	anomalyHandler := &handlers.AnomalyHandler{DB: db}
@@ -91,12 +94,24 @@ func main() {
 	// Setup router
 	r := gin.Default()
 
+	// CORS — only allow localhost in non-production
+	allowedOrigins := []string{cfg.FrontendURL}
+	if cfg.Env != "production" {
+		allowedOrigins = append(allowedOrigins,
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"http://localhost:5173",
+		)
+	}
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:3001", "http://localhost:5173", cfg.FrontendURL},
+		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
 	}))
+
+	// Global rate limit: 60 req/min per IP
+	r.Use(middleware.RateLimit())
 
 	oauthHandler := &handlers.OAuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger}
 
@@ -105,10 +120,11 @@ func main() {
 	r.GET("/api/cli/auth/init", cliAuthHandler.Init)
 	r.GET("/api/cli/auth/poll/:token", cliAuthHandler.Poll)
 	r.GET("/api/invite/:token", orgHandler.GetInvite)
-	r.POST("/api/auth/register", authHandler.Register)
-	r.POST("/api/auth/login", authHandler.Login)
-	r.POST("/api/auth/forgot-password", authHandler.ForgotPassword)
-	r.POST("/api/auth/reset-password", authHandler.ResetPassword)
+	// Auth endpoints — stricter rate limit (10 req/min)
+	r.POST("/api/auth/register", middleware.RateLimitAuth(), authHandler.Register)
+	r.POST("/api/auth/login", middleware.RateLimitAuth(), authHandler.Login)
+	r.POST("/api/auth/forgot-password", middleware.RateLimitAuth(), authHandler.ForgotPassword)
+	r.POST("/api/auth/reset-password", middleware.RateLimitAuth(), authHandler.ResetPassword)
 	r.GET("/api/auth/providers", oauthHandler.Providers)
 	r.GET("/api/auth/google", oauthHandler.GoogleLogin)
 	r.POST("/api/auth/google/callback", oauthHandler.GoogleCallback)
@@ -145,6 +161,7 @@ func main() {
 		api.GET("/backups", backupHandler.List)
 		api.POST("/backups/trigger/:id", backupHandler.Trigger)
 		api.GET("/backups/:id/download", backupHandler.Download)
+		api.GET("/backups/:id/restore/preview", backupHandler.RestorePreview)
 		api.POST("/backups/:id/restore", backupHandler.Restore)
 		api.GET("/backups/stats", backupHandler.Stats)
 		api.GET("/backups/chart", backupHandler.ChartData)
@@ -162,13 +179,17 @@ func main() {
 		api.GET("/anomalies", anomalyHandler.List)
 		api.PATCH("/anomalies/:id/resolve", anomalyHandler.Resolve)
 		api.GET("/anomalies/stats", anomalyHandler.Stats)
+		api.GET("/connections/:id/anomaly-settings", anomalyHandler.GetAnomalySettings)
+		api.PUT("/connections/:id/anomaly-settings", anomalyHandler.UpdateAnomalySettings)
 
 		api.PATCH("/auth/password", settingsHandler.ChangePassword)
 		api.GET("/settings/notifications", settingsHandler.GetNotificationSettings)
 		api.PATCH("/settings/notifications", settingsHandler.UpdateNotificationSettings)
 		api.POST("/settings/notifications/test", settingsHandler.TestNotification)
 		api.POST("/settings/slack/test", settingsHandler.TestSlack)
+		api.POST("/settings/discord/test", settingsHandler.TestDiscord)
 		api.GET("/settings/storage", settingsHandler.GetStorageInfo)
+		api.GET("/storage/usage", settingsHandler.GetStorageInfo)
 
 		api.GET("/storage-providers", storageProviderHandler.List)
 		api.POST("/storage-providers", storageProviderHandler.Create)
@@ -198,6 +219,7 @@ func main() {
 		api.POST("/sync", syncHandler.Create)
 		api.PUT("/sync/:id", syncHandler.Update)
 		api.DELETE("/sync/:id", syncHandler.Delete)
+		api.GET("/sync/:id/preview", syncHandler.Preview)
 		api.POST("/sync/:id/run", syncHandler.TriggerRun)
 		api.GET("/sync/:id/runs", syncHandler.Runs)
 
@@ -208,6 +230,18 @@ func main() {
 		api.POST("/webhooks/:id/test", webhookHandler.Test)
 		api.GET("/webhooks/:id/deliveries", webhookHandler.Deliveries)
 	}
+
+	// Background job: clean up expired password reset tokens every hour
+	go func() {
+		for range time.Tick(1 * time.Hour) {
+			res, err := db.Exec("DELETE FROM password_reset_tokens WHERE expires_at < NOW()")
+			if err == nil {
+				if n, _ := res.RowsAffected(); n > 0 {
+					log.Printf("[cleanup] deleted %d expired password reset token(s)", n)
+				}
+			}
+		}
+	}()
 
 	log.Printf("Server starting on port %s", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {

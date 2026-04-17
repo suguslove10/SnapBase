@@ -180,6 +180,10 @@ const dialogStyle = {
 export default function BackupHistoryPage() {
   const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 20;
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const [restoreTab, setRestoreTab] = useState<"auto" | "cli">("auto");
   const [verifyError, setVerifyError] = useState<string | null>(null);
@@ -187,14 +191,21 @@ export default function BackupHistoryPage() {
   const [restoring, setRestoring] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [restoreComplete, setRestoreComplete] = useState<"success" | "error" | null>(null);
+  const [restorePreview, setRestorePreview] = useState<{ size_bytes: number; started_at: string; verified: boolean; encrypted: boolean } | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
-  const fetchBackups = () => {
+  const fetchBackups = (p = page) => {
     setLoading(true);
-    api.get("/backups").then((res) => { setBackups(res.data); setLoading(false); });
+    api.get(`/backups?page=${p}&limit=${limit}`).then((res) => {
+      setBackups(res.data.items ?? res.data);
+      setTotal(res.data.total ?? 0);
+      setTotalPages(res.data.total_pages ?? 1);
+      setLoading(false);
+    });
   };
 
-  useEffect(() => { fetchBackups(); }, []);
+  useEffect(() => { fetchBackups(page); }, [page]);
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
@@ -248,16 +259,23 @@ export default function BackupHistoryPage() {
       setRestoreComplete("error");
     }
     setRestoring(false);
-    fetchBackups();
+    fetchBackups(page);
   };
 
-  const openRestoreModal = (backup: Backup) => {
+  const openRestoreModal = async (backup: Backup) => {
     setRestoreTarget(backup);
     setRestoreTab("auto");
     setConfirmed(false);
     setLogs([]);
     setRestoreComplete(null);
     setRestoring(false);
+    setRestorePreview(null);
+    setLoadingPreview(true);
+    try {
+      const res = await api.get(`/backups/${backup.id}/restore/preview`);
+      setRestorePreview(res.data);
+    } catch { /* preview is optional */ }
+    finally { setLoadingPreview(false); }
   };
 
   const statusBorderColor: Record<string, string> = {
@@ -275,7 +293,7 @@ export default function BackupHistoryPage() {
           <p className="mt-1 text-sm text-slate-500">All backup jobs across your connections</p>
         </div>
         <button
-          onClick={fetchBackups}
+          onClick={() => fetchBackups(page)}
           className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-slate-400 transition hover:border-white/20 hover:text-white"
         >
           <RefreshCw className="h-3.5 w-3.5" />Refresh
@@ -368,6 +386,32 @@ export default function BackupHistoryPage() {
             </table>
           </div>
         )}
+
+        {/* Pagination */}
+        {!loading && totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-white/[0.06] px-6 py-4">
+            <p className="text-xs text-slate-500">
+              Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total} backups
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs text-slate-400 transition hover:text-white disabled:opacity-30"
+              >
+                ← Prev
+              </button>
+              <span className="font-jetbrains text-xs text-slate-500">{page} / {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs text-slate-400 transition hover:text-white disabled:opacity-30"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Verification Error Dialog */}
@@ -421,6 +465,29 @@ export default function BackupHistoryPage() {
           {/* 1-Click Restore tab */}
           {restoreTab === "auto" && !restoring && logs.length === 0 && (
             <div className="space-y-4">
+              {/* Restore Preview */}
+              {loadingPreview ? (
+                <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+              ) : restorePreview && (
+                <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-center">
+                  <div>
+                    <p className="font-jetbrains text-[9px] uppercase tracking-widest text-slate-600">Size</p>
+                    <p className="mt-0.5 text-xs font-semibold text-white">{formatBytes(restorePreview.size_bytes)}</p>
+                  </div>
+                  <div>
+                    <p className="font-jetbrains text-[9px] uppercase tracking-widest text-slate-600">Verified</p>
+                    <p className={`mt-0.5 text-xs font-semibold ${restorePreview.verified ? "text-[#00ff88]" : "text-slate-500"}`}>
+                      {restorePreview.verified ? "Yes" : "No"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-jetbrains text-[9px] uppercase tracking-widest text-slate-600">Encrypted</p>
+                    <p className={`mt-0.5 text-xs font-semibold ${restorePreview.encrypted ? "text-[#00b4ff]" : "text-slate-500"}`}>
+                      {restorePreview.encrypted ? "Yes" : "No"}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
                 <p className="text-sm font-medium text-amber-300">This will overwrite your live database.</p>
                 <p className="mt-1 font-jetbrains text-xs text-amber-400/70">

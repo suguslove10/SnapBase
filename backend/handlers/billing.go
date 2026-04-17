@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -266,7 +267,90 @@ func formatUsageBytes(b int64) string {
 	return fmt.Sprintf("%.2f %s", size, sizes[i])
 }
 
-// Webhook is kept as a stub for future use.
+// Webhook handles Razorpay webhook events.
+// Razorpay signs the payload with HMAC-SHA256 using the webhook secret.
+// Set RAZORPAY_WEBHOOK_SECRET env var in Razorpay dashboard → Webhooks.
 func (h *BillingHandler) Webhook(c *gin.Context) {
+	// Read raw body for signature verification
+	body, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read body"})
+		return
+	}
+
+	// Verify signature (Razorpay sends X-Razorpay-Signature header)
+	sig := c.GetHeader("X-Razorpay-Signature")
+	webhookSecret := h.Cfg.RazorpayWebhookSecret
+	if webhookSecret != "" && sig != "" {
+		mac := hmac.New(sha256.New, []byte(webhookSecret))
+		mac.Write(body)
+		expected := hex.EncodeToString(mac.Sum(nil))
+		if !hmac.Equal([]byte(sig), []byte(expected)) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return
+		}
+	}
+
+	// Parse event
+	var event struct {
+		Event  string         `json:"event"`
+		Payload map[string]interface{} `json:"payload"`
+	}
+	if err := json.Unmarshal(body, &event); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+
+	switch event.Event {
+	case "payment.captured":
+		// Already handled by /billing/verify — nothing extra needed
+	case "subscription.activated":
+		h.handleSubscriptionUpdate(event.Payload, "active")
+	case "subscription.charged":
+		// Renewal successful — ensure status stays active
+		h.handleSubscriptionUpdate(event.Payload, "active")
+	case "subscription.halted":
+		// Payment failed after retries
+		h.handleSubscriptionUpdate(event.Payload, "halted")
+	case "subscription.cancelled":
+		h.handleSubscriptionUpdate(event.Payload, "cancelled")
+	case "subscription.completed":
+		h.handleSubscriptionUpdate(event.Payload, "completed")
+	}
+
 	c.JSON(http.StatusOK, gin.H{"received": true})
+}
+
+func (h *BillingHandler) handleSubscriptionUpdate(payload map[string]interface{}, newStatus string) {
+	subPayload, ok := payload["subscription"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	entity, ok := subPayload["entity"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	subID, _ := entity["id"].(string)
+	if subID == "" {
+		return
+	}
+
+	// Find user by razorpay_subscription_id and update status
+	_, err := h.DB.Exec(
+		`UPDATE subscriptions SET status = $1, updated_at = NOW()
+		 WHERE razorpay_subscription_id = $2`,
+		newStatus, subID,
+	)
+	if err != nil {
+		return
+	}
+
+	// If cancelled/halted, downgrade plan to free
+	if newStatus == "cancelled" || newStatus == "halted" || newStatus == "completed" {
+		h.DB.Exec(
+			`UPDATE subscriptions SET plan = 'free', status = $1, updated_at = NOW()
+			 WHERE razorpay_subscription_id = $2`,
+			newStatus, subID,
+		)
+	}
 }

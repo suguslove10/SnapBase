@@ -119,13 +119,21 @@ func DeliverWebhookSync(db *sql.DB, webhookID int, event string, data interface{
 }
 
 func deliverOne(db *sql.DB, webhookID int, url, secret, event string, payloadBytes []byte) {
-	status, body, failed := postWebhook(url, secret, payloadBytes)
-
-	// Retry once on failure
-	if failed {
+	// Exponential backoff: 5 attempts with delays 0s, 1s, 2s, 4s, 8s
+	delays := []time.Duration{0, 1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second}
+	var status int
+	var body string
+	var failed bool
+	for i, delay := range delays {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 		status, body, failed = postWebhook(url, secret, payloadBytes)
+		if !failed {
+			break
+		}
+		log.Printf("webhooks: delivery attempt %d/%d failed for webhook %d (status=%d)", i+1, len(delays), webhookID, status)
 	}
-
 	recordDelivery(db, webhookID, event, payloadBytes, status, body, failed)
 }
 

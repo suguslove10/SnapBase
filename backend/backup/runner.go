@@ -68,8 +68,20 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	// Run pre-backup hooks (failure does not fail backup)
 	r.runHooks(conn, "pre")
 
-	// Execute backup
-	tmpFile, err := r.executeBackup(conn)
+	// Execute backup with exponential backoff retry (3 attempts: 0s, 5s, 15s delay)
+	var tmpFile string
+	delays := []time.Duration{0, 5 * time.Second, 15 * time.Second}
+	for attempt, delay := range delays {
+		if delay > 0 {
+			log.Printf("[backup] attempt %d/%d for connection %d — retrying in %s", attempt+1, len(delays), conn.ID, delay)
+			time.Sleep(delay)
+		}
+		tmpFile, err = r.executeBackup(conn)
+		if err == nil {
+			break
+		}
+		log.Printf("[backup] attempt %d/%d failed for connection %d: %v", attempt+1, len(delays), conn.ID, err)
+	}
 	if err != nil {
 		r.failJob(jobID, err.Error())
 		r.sendNotification(userEmail, conn, "failed", 0, err.Error(), time.Since(now))
@@ -211,10 +223,17 @@ func (r *Runner) sendNotification(to string, conn models.DBConnection, status st
 	}
 
 	// Slack — look up webhook from user settings
-	var webhookURL string
-	r.DB.QueryRow("SELECT value FROM settings WHERE user_id = $1 AND key = 'slack_webhook_url'", conn.UserID).Scan(&webhookURL)
-	if webhookURL != "" {
-		go notifications.SendSlackNotification(webhookURL, n)
+	var slackURL string
+	r.DB.QueryRow("SELECT value FROM settings WHERE user_id = $1 AND key = 'slack_webhook_url'", conn.UserID).Scan(&slackURL)
+	if slackURL != "" {
+		go notifications.SendSlackNotification(slackURL, n)
+	}
+
+	// Discord — look up webhook from user settings
+	var discordURL string
+	r.DB.QueryRow("SELECT value FROM settings WHERE user_id = $1 AND key = 'discord_webhook_url'", conn.UserID).Scan(&discordURL)
+	if discordURL != "" {
+		go notifications.SendDiscordNotification(discordURL, n)
 	}
 }
 
@@ -263,11 +282,17 @@ func (r *Runner) runSQLHook(hookID int, conn models.DBConnection, sqlScript stri
 		)
 		cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", conn.PasswordEncrypted))
 	case "mysql":
+		credsFile, cleanup, credErr := mysqlDefaultsFile(conn.PasswordEncrypted)
+		if credErr != nil {
+			log.Printf("hooks[%d]: failed to create mysql creds file: %v", hookID, credErr)
+			return
+		}
+		defer cleanup()
 		cmd = exec.Command("mysql",
+			"--defaults-file="+credsFile,
 			"-h", conn.Host,
 			"-P", fmt.Sprintf("%d", conn.Port),
 			"-u", conn.Username,
-			fmt.Sprintf("-p%s", conn.PasswordEncrypted),
 			conn.Database,
 			"-e", sqlScript,
 		)
@@ -324,11 +349,18 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", conn.PasswordEncrypted))
 
 	case "mysql":
+		credsFile, cleanupCreds, credErr := mysqlDefaultsFile(conn.PasswordEncrypted)
+		if credErr != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+			return "", credErr
+		}
+		defer cleanupCreds()
 		cmd = exec.Command("mysqldump",
+			"--defaults-file="+credsFile,
 			"-h", conn.Host,
 			"-P", fmt.Sprintf("%d", conn.Port),
 			"-u", conn.Username,
-			fmt.Sprintf("-p%s", conn.PasswordEncrypted),
 			conn.Database,
 		)
 

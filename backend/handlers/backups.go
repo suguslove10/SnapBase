@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,12 +23,25 @@ type BackupHandler struct {
 	Storage       storage.StorageClient
 	Cfg           *config.Config
 	Runner        *backup.Runner
+	Queue         *backup.Queue
 	RestoreRunner *backup.RestoreRunner
 	AuditLogger   interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
 }
 
 func (h *BackupHandler) List(c *gin.Context) {
 	userID := c.GetInt("user_id")
+
+	// Pagination
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
 	const listQ = `
 		SELECT b.id, b.connection_id, dc.name, dc.type,
 			COALESCE(dc.host, ''), COALESCE(dc.port, 0), dc.database_name, COALESCE(dc.username, ''),
@@ -40,13 +54,21 @@ func (h *BackupHandler) List(c *gin.Context) {
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE %s
 		ORDER BY b.started_at DESC NULLS LAST
-		LIMIT 100`
+		LIMIT $%d OFFSET $%d`
+
+	const countQ = `SELECT COUNT(*) FROM backup_jobs b JOIN db_connections dc ON b.connection_id = dc.id WHERE %s`
+
 	var rows *sql.Rows
 	var err error
+	var total int
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
-		rows, err = h.DB.Query(fmt.Sprintf(listQ, "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"), orgIDRaw, userID)
+		where := "(dc.org_id = $1 OR (dc.org_id IS NULL AND dc.user_id = $2))"
+		h.DB.QueryRow(fmt.Sprintf(countQ, where), orgIDRaw, userID).Scan(&total)
+		rows, err = h.DB.Query(fmt.Sprintf(listQ, where, 3, 4), orgIDRaw, userID, limit, offset)
 	} else {
-		rows, err = h.DB.Query(fmt.Sprintf(listQ, "dc.user_id = $1"), userID)
+		where := "dc.user_id = $1"
+		h.DB.QueryRow(fmt.Sprintf(countQ, where), userID).Scan(&total)
+		rows, err = h.DB.Query(fmt.Sprintf(listQ, where, 2, 3), userID, limit, offset)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch backups"})
@@ -84,7 +106,13 @@ func (h *BackupHandler) List(c *gin.Context) {
 	if backups == nil {
 		backups = []models.BackupJob{}
 	}
-	c.JSON(http.StatusOK, backups)
+	c.JSON(http.StatusOK, gin.H{
+		"items":      backups,
+		"total":      total,
+		"page":       page,
+		"limit":      limit,
+		"total_pages": (total + limit - 1) / limit,
+	})
 }
 
 func (h *BackupHandler) Trigger(c *gin.Context) {
@@ -139,12 +167,19 @@ func (h *BackupHandler) Trigger(c *gin.Context) {
 		return
 	}
 
-	go h.Runner.RunBackup(conn, nil)
+	if h.Queue != nil {
+		if !h.Queue.Enqueue(conn, nil) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Backup queue is full. Please try again shortly."})
+			return
+		}
+	} else {
+		go h.Runner.RunBackup(conn, nil)
+	}
 
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogAction(userID, "backup.triggered", "connection", connID, map[string]interface{}{"name": conn.Name}, c.ClientIP())
 	}
-	c.JSON(http.StatusAccepted, gin.H{"message": "Backup triggered"})
+	c.JSON(http.StatusAccepted, gin.H{"message": "Backup queued"})
 }
 
 func (h *BackupHandler) Download(c *gin.Context) {
@@ -361,6 +396,79 @@ func (h *BackupHandler) ActivityFeed(c *gin.Context) {
 		activities = []Activity{}
 	}
 	c.JSON(http.StatusOK, activities)
+}
+
+// RestorePreview returns metadata about a backup before the user confirms restore.
+func (h *BackupHandler) RestorePreview(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	backupID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid backup ID"})
+		return
+	}
+
+	var (
+		connName, dbType, status, storagePath string
+		sizeBytes                             int64
+		startedAt, completedAt               *string
+		verified                             sql.NullBool
+		verificationError                    sql.NullString
+		encrypted                            bool
+	)
+	q := `SELECT dc.name, dc.type, b.status, COALESCE(b.size_bytes,0),
+		COALESCE(b.storage_path,''),
+		b.started_at::text, b.completed_at::text,
+		b.verified, b.verification_error,
+		COALESCE(b.encrypted, false)
+		FROM backup_jobs b JOIN db_connections dc ON b.connection_id = dc.id
+		WHERE b.id = $1 AND %s`
+	var row *sql.Row
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		row = h.DB.QueryRow(fmt.Sprintf(q, "(dc.org_id = $2 OR (dc.org_id IS NULL AND dc.user_id = $3))"), backupID, orgIDRaw, userID)
+	} else {
+		row = h.DB.QueryRow(fmt.Sprintf(q, "dc.user_id = $2"), backupID, userID)
+	}
+	var startStr, completedStr sql.NullString
+	if err := row.Scan(&connName, &dbType, &status, &sizeBytes, &storagePath,
+		&startStr, &completedStr, &verified, &verificationError, &encrypted); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Backup not found"})
+		return
+	}
+	if startStr.Valid { s := startStr.String; startedAt = &s }
+	if completedStr.Valid { s := completedStr.String; completedAt = &s }
+
+	var durationSec float64
+	if startedAt != nil && completedAt != nil {
+		t1, _ := time.Parse(time.RFC3339, *startedAt)
+		t2, _ := time.Parse(time.RFC3339, *completedAt)
+		durationSec = t2.Sub(t1).Seconds()
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"backup_id":          backupID,
+		"connection_name":    connName,
+		"db_type":            dbType,
+		"status":             status,
+		"size_bytes":         sizeBytes,
+		"size_formatted":     formatSize(sizeBytes),
+		"started_at":         startedAt,
+		"completed_at":       completedAt,
+		"duration_seconds":   durationSec,
+		"verified":           verified.Valid && verified.Bool,
+		"verification_error": verificationError.String,
+		"encrypted":          encrypted,
+		"warning":            "This will overwrite your current live database. Ensure you have a recent backup before proceeding.",
+	})
+}
+
+func formatSize(b int64) string {
+	if b == 0 { return "0 B" }
+	const k = 1024
+	sizes := []string{"B", "KB", "MB", "GB"}
+	i := 0
+	size := float64(b)
+	for size >= float64(k) && i < len(sizes)-1 { size /= float64(k); i++ }
+	return fmt.Sprintf("%.2f %s", size, sizes[i])
 }
 
 func (h *BackupHandler) Restore(c *gin.Context) {

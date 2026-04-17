@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/suguslove10/snapbase/models"
 )
 
@@ -105,24 +106,81 @@ func extractPostgres(conn models.DBConnection, password string) (string, error) 
 }
 
 func extractMySQL(conn models.DBConnection, password string) (string, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?timeout=10s",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?timeout=10s&parseTime=true",
 		conn.Username, password, conn.Host, conn.Port, conn.Database)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	if err := db.Ping(); err != nil {
+		return "", err
+	}
 
-	// Use lib/pq-style import only for postgres — for MySQL we'd need go-sql-driver/mysql
-	// Since MySQL driver may not be available, return a placeholder schema
-	_ = dsn
-	return fmt.Sprintf("Database: %s (MySQL)\nHost: %s:%d\nUser: %s\n\n[Schema extraction requires mysql driver]",
-		conn.Database, conn.Host, conn.Port, conn.Username), nil
+	rows, err := db.Query(`
+		SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ?
+		ORDER BY TABLE_NAME, ORDINAL_POSITION`, conn.Database)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	tables := map[string]*TableInfo{}
+	order := []string{}
+	for rows.Next() {
+		var tbl, col, dtype, nullable string
+		if err := rows.Scan(&tbl, &col, &dtype, &nullable); err != nil {
+			continue
+		}
+		if _, ok := tables[tbl]; !ok {
+			tables[tbl] = &TableInfo{Name: tbl}
+			order = append(order, tbl)
+		}
+		tables[tbl].Columns = append(tables[tbl].Columns, ColumnInfo{Name: col, DataType: dtype, Nullable: nullable})
+	}
+
+	// Fetch indexes
+	idxRows, _ := db.Query(`
+		SELECT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = ? GROUP BY TABLE_NAME, INDEX_NAME`, conn.Database)
+	if idxRows != nil {
+		defer idxRows.Close()
+		for idxRows.Next() {
+			var tbl, idx string
+			if err := idxRows.Scan(&tbl, &idx); err == nil {
+				if t, ok := tables[tbl]; ok {
+					t.Indexes = append(t.Indexes, idx)
+				}
+			}
+		}
+	}
+
+	// Row estimates from information_schema
+	for _, tbl := range order {
+		var n int64
+		db.QueryRow(
+			"SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+			conn.Database, tbl,
+		).Scan(&n)
+		tables[tbl].RowEst = n
+	}
+
+	return formatSchema(conn.Database, "MySQL", order, tables), nil
 }
 
 func extractSQLite(conn models.DBConnection) (string, error) {
-	return fmt.Sprintf("Database: %s (SQLite)\nFile: %s\n\n[Schema extraction requires sqlite3 driver]",
-		conn.Name, conn.Database), nil
+	// SQLite requires CGO (mattn/go-sqlite3) which we avoid in this build.
+	// Return a descriptive message so AI can still provide generic recommendations.
+	return fmt.Sprintf("Database: %s (SQLite)\nFile: %s\n\nNote: SQLite schema introspection is not available in this version. "+
+		"Please provide schema details manually for deeper analysis.", conn.Name, conn.Database), nil
 }
 
 func extractMongoDB(conn models.DBConnection, password string) (string, error) {
-	return fmt.Sprintf("Database: %s (MongoDB)\nHost: %s:%d\nUser: %s\n\n[Collection listing requires mongo driver]",
-		conn.Database, conn.Host, conn.Port, conn.Username), nil
+	// MongoDB driver requires a separate dependency. Return a helpful message.
+	return fmt.Sprintf("Database: %s (MongoDB)\nHost: %s:%d\nUser: %s\n\nNote: MongoDB schema introspection is not available in this version. "+
+		"Collections and indexes must be provided manually for analysis.", conn.Database, conn.Host, conn.Port, conn.Username), nil
 }
 
 func formatSchema(dbName, dbType string, order []string, tables map[string]*TableInfo) string {

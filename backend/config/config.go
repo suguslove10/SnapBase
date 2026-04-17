@@ -21,9 +21,11 @@ type Config struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	EncryptionKey  string
-	RazorpayKeyID     string
-	RazorpayKeySecret string
+	RazorpayKeyID            string
+	RazorpayKeySecret        string
+	RazorpayWebhookSecret    string
 	OpenAIAPIKey      string
+	Env               string // "production" | "development"
 }
 
 func Load() *Config {
@@ -46,9 +48,11 @@ func Load() *Config {
 		GitHubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		EncryptionKey:  getEnv("ENCRYPTION_KEY", ""),
-		RazorpayKeyID:     getEnv("RAZORPAY_KEY_ID", ""),
-		RazorpayKeySecret: getEnv("RAZORPAY_KEY_SECRET", ""),
+		RazorpayKeyID:            getEnv("RAZORPAY_KEY_ID", ""),
+		RazorpayKeySecret:        getEnv("RAZORPAY_KEY_SECRET", ""),
+		RazorpayWebhookSecret:    getEnv("RAZORPAY_WEBHOOK_SECRET", ""),
 		OpenAIAPIKey:      getEnv("OPENAI_API_KEY", ""),
+		Env:               getEnv("APP_ENV", "development"),
 	}
 }
 

@@ -309,6 +309,13 @@ func createTables(db *sql.DB) {
 			model VARCHAR(100),
 			generated_at TIMESTAMP DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS anomaly_settings (
+			id SERIAL PRIMARY KEY,
+			connection_id INTEGER REFERENCES db_connections(id) ON DELETE CASCADE UNIQUE,
+			size_drop_threshold FLOAT NOT NULL DEFAULT 0.5,
+			size_spike_threshold FLOAT NOT NULL DEFAULT 3.0,
+			updated_at TIMESTAMP DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

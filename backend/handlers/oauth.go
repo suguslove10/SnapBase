@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +20,28 @@ import (
 	"github.com/suguslove10/snapbase/config"
 )
 
+// generateOAuthState returns a signed state: "<random_hex>.<hmac>"
+func generateOAuthState(secret string) string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	data := hex.EncodeToString(b)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(data))
+	return data + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+// verifyOAuthState returns true if the state HMAC is valid.
+func verifyOAuthState(state, secret string) bool {
+	parts := strings.SplitN(state, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(parts[0]))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(parts[1]), []byte(expected))
+}
+
 type OAuthHandler struct {
 	DB          *sql.DB
 	Cfg         *config.Config
@@ -28,23 +54,31 @@ func (h *OAuthHandler) GoogleLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Google OAuth not configured"})
 		return
 	}
+	state := generateOAuthState(h.Cfg.JWTSecret)
 	redirectURI := h.Cfg.FrontendURL + "/auth/callback?provider=google"
 	authURL := fmt.Sprintf(
-		"https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&access_type=offline",
+		"https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&access_type=offline&state=%s",
 		url.QueryEscape(h.Cfg.GoogleClientID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape("openid email profile"),
+		url.QueryEscape(state),
 	)
-	c.JSON(http.StatusOK, gin.H{"url": authURL})
+	c.JSON(http.StatusOK, gin.H{"url": authURL, "state": state})
 }
 
 // GoogleCallback exchanges code for token and creates/logs in user
 func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	var req struct {
-		Code string `json:"code" binding:"required"`
+		Code  string `json:"code" binding:"required"`
+		State string `json:"state"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Code is required"})
+		return
+	}
+	// Verify CSRF state if provided
+	if req.State != "" && !verifyOAuthState(req.State, h.Cfg.JWTSecret) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OAuth state — possible CSRF attack"})
 		return
 	}
 
@@ -101,23 +135,30 @@ func (h *OAuthHandler) GitHubLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "GitHub OAuth not configured"})
 		return
 	}
+	state := generateOAuthState(h.Cfg.JWTSecret)
 	redirectURI := h.Cfg.FrontendURL + "/auth/callback?provider=github"
 	authURL := fmt.Sprintf(
-		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=%s",
+		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=%s&state=%s",
 		url.QueryEscape(h.Cfg.GitHubClientID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape("user:email"),
+		url.QueryEscape(state),
 	)
-	c.JSON(http.StatusOK, gin.H{"url": authURL})
+	c.JSON(http.StatusOK, gin.H{"url": authURL, "state": state})
 }
 
 // GitHubCallback exchanges code for token and creates/logs in user
 func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 	var req struct {
-		Code string `json:"code" binding:"required"`
+		Code  string `json:"code" binding:"required"`
+		State string `json:"state"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Code is required"})
+		return
+	}
+	if req.State != "" && !verifyOAuthState(req.State, h.Cfg.JWTSecret) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OAuth state — possible CSRF attack"})
 		return
 	}
 

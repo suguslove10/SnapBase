@@ -58,6 +58,17 @@ function relativeTime(date: string | null): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function nextRunIn(nextRun: string | null): string {
+  if (!nextRun) return "—";
+  const diff = new Date(nextRun).getTime() - Date.now();
+  if (diff <= 0) return "any moment";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `in ${hrs}h ${mins % 60}m`;
+  return `in ${Math.floor(hrs / 24)}d`;
+}
+
 const cardStyle = {
   background: "rgba(13,21,38,0.8)",
   backdropFilter: "blur(12px)",
@@ -78,6 +89,7 @@ export default function SchedulesPage() {
   const [selectedConnection, setSelectedConnection] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
   const [customCron, setCustomCron] = useState("");
+  const [cronError, setCronError] = useState("");
 
   const fetchSchedules = () => {
     setLoading(true);
@@ -89,15 +101,41 @@ export default function SchedulesPage() {
     api.get("/connections").then((res) => setConnections(res.data));
   }, []);
 
+  const validateCron = (expr: string): string => {
+    if (!expr) return "Cron expression is required";
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) return "Must have 5 fields: minute hour day month weekday";
+    const ranges = [[0,59],[0,23],[1,31],[1,12],[0,7]];
+    const labels = ["minute","hour","day","month","weekday"];
+    for (let i = 0; i < 5; i++) {
+      const p = parts[i];
+      if (p === "*") continue;
+      if (/^\*\/\d+$/.test(p)) {
+        const step = parseInt(p.split("/")[1]);
+        if (step < 1 || step > ranges[i][1]) return `Invalid step in ${labels[i]}`;
+        continue;
+      }
+      const num = parseInt(p);
+      if (isNaN(num) || num < ranges[i][0] || num > ranges[i][1])
+        return `${labels[i]} must be ${ranges[i][0]}-${ranges[i][1]}`;
+    }
+    return "";
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     const cronExpression = selectedPreset === "custom" ? customCron : selectedPreset;
     if (!cronExpression || !selectedConnection) { toast.error("Please fill all fields"); return; }
+    if (selectedPreset === "custom") {
+      const err = validateCron(cronExpression);
+      if (err) { setCronError(err); return; }
+    }
+    setCronError("");
     try {
       await api.post("/schedules", { connection_id: parseInt(selectedConnection), cron_expression: cronExpression });
       toast.success("Schedule created");
       setOpen(false);
-      setSelectedConnection(""); setSelectedPreset(""); setCustomCron("");
+      setSelectedConnection(""); setSelectedPreset(""); setCustomCron(""); setCronError("");
       fetchSchedules();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to create schedule";
@@ -182,10 +220,15 @@ export default function SchedulesPage() {
                   <Label className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Cron Expression</Label>
                   <Input
                     value={customCron}
-                    onChange={(e) => setCustomCron(e.target.value)}
-                    placeholder="*/5 * * * *"
-                    className={`${inputClass} font-jetbrains`}
+                    onChange={(e) => { setCustomCron(e.target.value); setCronError(""); }}
+                    onBlur={(e) => { const err = validateCron(e.target.value); setCronError(err); }}
+                    placeholder="0 2 * * *  (minute hour day month weekday)"
+                    className={`${inputClass} font-jetbrains ${cronError ? "border-red-500/50" : ""}`}
                   />
+                  {cronError && <p className="text-xs text-red-400">{cronError}</p>}
+                  {!cronError && customCron && (
+                    <p className="text-[10px] text-slate-500">Fields: minute (0-59) · hour (0-23) · day (1-31) · month (1-12) · weekday (0-7)</p>
+                  )}
                 </div>
               )}
               <div className="flex justify-end pt-1">
@@ -270,6 +313,11 @@ export default function SchedulesPage() {
                   <p className="mt-0.5 text-xs text-slate-400">
                     {s.next_run ? new Date(s.next_run).toLocaleString() : "—"}
                   </p>
+                  {s.next_run && s.enabled && (
+                    <p className="mt-0.5 font-jetbrains text-[10px] text-[#00b4ff]">
+                      {nextRunIn(s.next_run)}
+                    </p>
+                  )}
                 </div>
               </div>
 

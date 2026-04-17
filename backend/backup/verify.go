@@ -207,17 +207,27 @@ func (v *Verifier) verifyPostgres(host string, port int, username, password, dbN
 func (v *Verifier) verifyMySQL(host string, port int, username, password, dbName, sqlFile string) (*VerificationResult, error) {
 	tmpDB := fmt.Sprintf("verify_tmp_%d", time.Now().UnixNano())
 
-	cmd := exec.Command("mysql", "-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, fmt.Sprintf("-p%s", password), "-e", fmt.Sprintf("CREATE DATABASE %s", tmpDB))
+	// Write a temp credentials file so the password is never exposed as a CLI arg.
+	credsFile, cleanupCreds, err := mysqlDefaultsFile(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mysql credentials file: %w", err)
+	}
+	defer cleanupCreds()
+
+	mysql := func(args ...string) *exec.Cmd {
+		return exec.Command("mysql", append([]string{"--defaults-file=" + credsFile}, args...)...)
+	}
+
+	cmd := mysql("-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, "-e", fmt.Sprintf("CREATE DATABASE %s", tmpDB))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to create temp DB: %s %v", string(out), err)
 	}
 	defer func() {
-		cmd := exec.Command("mysql", "-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, fmt.Sprintf("-p%s", password), "-e", fmt.Sprintf("DROP DATABASE IF EXISTS %s", tmpDB))
-		cmd.Run()
+		mysql("-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, "-e", fmt.Sprintf("DROP DATABASE IF EXISTS %s", tmpDB)).Run()
 	}()
 
 	inFile, _ := os.Open(sqlFile)
-	cmd = exec.Command("mysql", "-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, fmt.Sprintf("-p%s", password), tmpDB)
+	cmd = mysql("-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, tmpDB)
 	cmd.Stdin = inFile
 	if out, err := cmd.CombinedOutput(); err != nil {
 		inFile.Close()
@@ -226,7 +236,7 @@ func (v *Verifier) verifyMySQL(host string, port int, username, password, dbName
 	inFile.Close()
 
 	// Count tables
-	cmd = exec.Command("mysql", "-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, fmt.Sprintf("-p%s", password), tmpDB, "-N", "-e", "SHOW TABLES")
+	cmd = mysql("-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, tmpDB, "-N", "-e", "SHOW TABLES")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %v", err)
@@ -238,7 +248,7 @@ func (v *Verifier) verifyMySQL(host string, port int, username, password, dbName
 		if table == "" {
 			continue
 		}
-		cmd = exec.Command("mysql", "-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, fmt.Sprintf("-p%s", password), tmpDB, "-N", "-e", fmt.Sprintf("SELECT COUNT(*) FROM `%s`", table))
+		cmd = mysql("-h", host, "-P", fmt.Sprintf("%d", port), "-u", username, tmpDB, "-N", "-e", fmt.Sprintf("SELECT COUNT(*) FROM `%s`", table))
 		countOut, _ := cmd.Output()
 		var count int64
 		fmt.Sscanf(strings.TrimSpace(string(countOut)), "%d", &count)

@@ -122,3 +122,73 @@ func (h *AnomalyHandler) Stats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"unresolved": unresolved})
 }
+
+// GetAnomalySettings returns the anomaly threshold settings for a connection.
+func (h *AnomalyHandler) GetAnomalySettings(c *gin.Context) {
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+	var dropThreshold, spikeThreshold float64
+	err = h.DB.QueryRow(
+		"SELECT size_drop_threshold, size_spike_threshold FROM anomaly_settings WHERE connection_id = $1", connID,
+	).Scan(&dropThreshold, &spikeThreshold)
+	if err != nil {
+		// Return defaults
+		dropThreshold, spikeThreshold = 0.5, 3.0
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"connection_id":        connID,
+		"size_drop_threshold":  dropThreshold,
+		"size_spike_threshold": spikeThreshold,
+	})
+}
+
+// UpdateAnomalySettings upserts anomaly threshold settings for a connection.
+func (h *AnomalyHandler) UpdateAnomalySettings(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	connID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid connection ID"})
+		return
+	}
+
+	// Verify ownership
+	var count int
+	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+		h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE id = $1 AND (org_id = $2 OR (org_id IS NULL AND user_id = $3))", connID, orgIDRaw, userID).Scan(&count)
+	} else {
+		h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE id = $1 AND user_id = $2", connID, userID).Scan(&count)
+	}
+	if count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Connection not found"})
+		return
+	}
+
+	var req struct {
+		SizeDropThreshold  float64 `json:"size_drop_threshold"`
+		SizeSpikeThreshold float64 `json:"size_spike_threshold"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+	// Clamp values to reasonable range
+	if req.SizeDropThreshold < 0.1 { req.SizeDropThreshold = 0.1 }
+	if req.SizeDropThreshold > 0.9 { req.SizeDropThreshold = 0.9 }
+	if req.SizeSpikeThreshold < 1.5 { req.SizeSpikeThreshold = 1.5 }
+	if req.SizeSpikeThreshold > 10.0 { req.SizeSpikeThreshold = 10.0 }
+
+	_, err = h.DB.Exec(`
+		INSERT INTO anomaly_settings (connection_id, size_drop_threshold, size_spike_threshold, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (connection_id) DO UPDATE
+		SET size_drop_threshold = $2, size_spike_threshold = $3, updated_at = NOW()
+	`, connID, req.SizeDropThreshold, req.SizeSpikeThreshold)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save settings"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Anomaly settings updated"})
+}

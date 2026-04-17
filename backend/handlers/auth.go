@@ -192,7 +192,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 	tokenStr := hex.EncodeToString(tokenBytes)
 
-	expiresAt := time.Now().Add(1 * time.Hour)
+	expiresAt := time.Now().Add(15 * time.Minute) // short-lived for security
 	_, err = h.DB.Exec(
 		"INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)",
 		userID, tokenStr, expiresAt,
