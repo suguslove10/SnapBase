@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/suguslove10/snapbase/config"
 	"github.com/suguslove10/snapbase/crypto"
 	"github.com/suguslove10/snapbase/storage"
 )
@@ -20,6 +21,7 @@ import (
 type RestoreRunner struct {
 	DB      *sql.DB
 	Storage storage.StorageClient
+	Cfg     *config.Config
 }
 
 type RestoreEvent struct {
@@ -36,17 +38,17 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	// Get backup info
 	var storagePath, dbType, host, username, passwordEnc, dbName string
-	var port int
+	var port, connID int
 	var isEncrypted bool
 	var encKeyEnc, authSource string
 	err := r.DB.QueryRow(`
 		SELECT b.storage_path, dc.type, dc.host, dc.port, dc.username, dc.password_encrypted, dc.database_name,
 		       COALESCE(b.encrypted, false), COALESCE(dc.encryption_key_encrypted, ''),
-		       COALESCE(dc.auth_source, 'admin')
+		       COALESCE(dc.auth_source, 'admin'), dc.id
 		FROM backup_jobs b
 		JOIN db_connections dc ON b.connection_id = dc.id
 		WHERE b.id = $1 AND dc.user_id = $2 AND b.status = 'success'
-	`, backupID, userID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &isEncrypted, &encKeyEnc, &authSource)
+	`, backupID, userID).Scan(&storagePath, &dbType, &host, &port, &username, &passwordEnc, &dbName, &isEncrypted, &encKeyEnc, &authSource, &connID)
 	if err != nil {
 		send("error", "Backup not found or not eligible for restore")
 		return
@@ -78,9 +80,16 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 	r.DB.Exec("UPDATE backup_jobs SET restore_status = 'running' WHERE id = $1", backupID)
 	send("log", fmt.Sprintf("Starting restore for %s database: %s", dbType, dbName))
 
-	// Download backup from MinIO
+	// Resolve the same storage provider used during backup
+	connStorage, storageErr := resolveStorage(r.DB, r.Cfg, connID, userID)
+	if storageErr != nil {
+		log.Printf("restore: failed to resolve storage for conn %d, falling back to default: %v", connID, storageErr)
+		connStorage = r.Storage
+	}
+
+	// Download backup from storage
 	send("log", "Downloading backup from storage...")
-	obj, err := r.Storage.GetObject(storagePath)
+	obj, err := connStorage.GetObject(storagePath)
 	if err != nil {
 		send("error", fmt.Sprintf("Failed to download backup: %v", err))
 		r.DB.Exec("UPDATE backup_jobs SET restore_status = 'failed' WHERE id = $1", backupID)

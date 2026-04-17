@@ -72,7 +72,7 @@ func main() {
 	auditLogger := &audit.Logger{DB: db}
 	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger, EmailConfig: emailCfg}
 	connHandler := &handlers.ConnectionHandler{DB: db, AuditLogger: auditLogger}
-	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store}
+	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store, Cfg: cfg}
 	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, Queue: backupQueue, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
 	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched, AuditLogger: auditLogger}
 	settingsHandler := &handlers.SettingsHandler{DB: db, Cfg: cfg, Storage: store}
