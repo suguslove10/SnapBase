@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import UpgradeModal from "@/components/UpgradeModal";
-import Link from "next/link";
 
 interface TableInsight {
   name: string;
