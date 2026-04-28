@@ -148,22 +148,24 @@ func (h *BackupHandler) Trigger(c *gin.Context) {
 		}
 	}
 
-	// Storage limit enforcement
+	// Storage limit enforcement (counts plan limit + active add-on packs).
 	plan := getUserPlan(h.DB, userID)
 	used := GetStorageUsed(h.DB, userID)
-	limit := GetStorageLimit(plan)
+	limit := GetStorageLimitWithAddons(h.DB, userID, plan)
 	if used >= limit {
-		var limitGB int64 = limit / (1024 * 1024 * 1024)
+		limitGB := limit / (1024 * 1024 * 1024)
 		var msg string
 		switch plan {
 		case "free":
-			msg = fmt.Sprintf("Free plan storage limit (%dGB) reached. Upgrade to Pro for 10GB.", limitGB)
+			msg = fmt.Sprintf("Free plan storage limit (%dGB) reached. Upgrade to Pro for 10GB or buy a +50GB add-on pack.", limitGB)
 		case "pro":
-			msg = fmt.Sprintf("Pro plan storage limit (%dGB) reached. Upgrade to Team for 100GB.", limitGB)
+			msg = fmt.Sprintf("Pro plan storage limit (%dGB) reached. Upgrade to Team for 100GB or buy add-on storage.", limitGB)
+		case "team":
+			msg = fmt.Sprintf("Team plan storage limit (%dGB) reached. Upgrade to Business for 500GB or buy add-on storage.", limitGB)
 		default:
-			msg = fmt.Sprintf("Storage limit (%dGB) reached. Please contact support.", limitGB)
+			msg = fmt.Sprintf("Storage limit (%dGB) reached. Add storage packs from /billing or contact support.", limitGB)
 		}
-		c.JSON(http.StatusForbidden, gin.H{"error": msg, "upgrade_required": true})
+		c.JSON(http.StatusForbidden, gin.H{"error": msg, "upgrade_required": true, "current_plan": plan})
 		return
 	}
 

@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import UpgradeModal from "@/components/UpgradeModal";
 import Link from "next/link";
 
 interface TableInsight {
@@ -89,6 +90,7 @@ function HealthRing({ score }: { score: number }) {
 
 export default function InsightsPage() {
   const { plan } = useAuth();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<number | null>(null);
@@ -141,10 +143,18 @@ export default function InsightsPage() {
     <div className="p-6 space-y-6">
       {plan === "free" && (
         <div className="flex items-center justify-between rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">
-          <p className="text-sm text-yellow-300">AI Schema Insights are available on <strong>Pro</strong> and <strong>Team</strong> plans.</p>
-          <Link href="/billing" className="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-yellow-400 transition">Upgrade</Link>
+          <p className="text-sm text-yellow-300">AI Schema Insights are available on <strong>Pro</strong> and above.</p>
+          <button onClick={() => setUpgradeOpen(true)} className="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-yellow-400 transition">Upgrade</button>
         </div>
       )}
+      <UpgradeModal
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        currentPlan={plan}
+        reason="feature"
+        feature="AI Schema Insights"
+        onUpgraded={() => { setUpgradeOpen(false); window.location.reload(); }}
+      />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

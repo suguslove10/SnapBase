@@ -11,6 +11,7 @@ import { Plus, Trash2, Zap, Play, Database, Lock, LockOpen, ShieldCheck, Pencil,
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import UpgradeModal from "@/components/UpgradeModal";
 
 interface Connection {
   id: number;
@@ -362,8 +363,15 @@ export default function ConnectionsPage() {
       setForm({ name: "", type: "postgres", host: "localhost", port: 5432, database: "", username: "", password: "", retention_days: 30, storage_provider_id: "", auth_source: "admin" });
       fetchConnections();
       fetchUsage();
-    } catch {
-      toast.error("Failed to create connection");
+    } catch (err) {
+      const data = (err as { response?: { data?: { upgrade_required?: boolean; error?: string } } })?.response?.data;
+      if (data?.upgrade_required) {
+        // Keep form data — show upgrade modal instead of error toast.
+        setOpen(false);
+        setShowUpgradeModal(true);
+      } else {
+        toast.error(data?.error || "Failed to create connection");
+      }
     }
   };
 
@@ -630,39 +638,21 @@ export default function ConnectionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Upgrade limit modal */}
-      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
-        <DialogContent
-          className="max-w-sm text-white"
-          style={{ background: "#0d1526", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "1.25rem" }}
-        >
-          <DialogHeader>
-            <DialogTitle className="font-grotesk text-lg font-semibold text-white">Connection limit reached</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-slate-400">
-              You&apos;ve reached your connection limit ({usage?.connections_used}/{usage?.connections_limit === -1 ? "∞" : usage?.connections_limit}).
-              {usage?.plan === "free" && " Upgrade to Pro for up to 5 connections."}
-              {usage?.plan === "pro" && " Upgrade to Team for unlimited connections."}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowUpgradeModal(false)}
-                className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white"
-              >
-                Cancel
-              </button>
-              <a
-                href="/billing"
-                className="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-              >
-                {usage?.plan === "free" ? "Upgrade to Pro" : "Upgrade to Team"}
-              </a>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Upgrade limit modal — in-line Razorpay checkout, preserves form data */}
+      <UpgradeModal
+        open={showUpgradeModal}
+        onOpenChange={setShowUpgradeModal}
+        currentPlan={usage?.plan ?? "free"}
+        used={usage?.connections_used ?? 0}
+        limit={usage?.connections_limit ?? 1}
+        onUpgraded={() => {
+          setShowUpgradeModal(false);
+          fetchUsage();
+          // If they had been mid-form, re-open to finish creating the connection.
+          if (form.name.trim() || form.database.trim()) setOpen(true);
+        }}
+      />
+
 
       {/* Content */}
       {loading ? (

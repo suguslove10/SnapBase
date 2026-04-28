@@ -9,6 +9,7 @@ import api from "@/lib/api";
 
 interface Backup {
   id: number;
+  connection_id: number;
   connection_name: string;
   connection_type: string;
   connection_host: string;
@@ -193,7 +194,24 @@ export default function BackupHistoryPage() {
   const [restoreComplete, setRestoreComplete] = useState<"success" | "error" | null>(null);
   const [restorePreview, setRestorePreview] = useState<{ size_bytes: number; started_at: string; verified: boolean; encrypted: boolean } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [retrying, setRetrying] = useState<number | null>(null);
+  const [confirmDbName, setConfirmDbName] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
+
+  const handleRetry = async (backup: Backup) => {
+    setRetrying(backup.id);
+    try {
+      await api.post(`/backups/trigger/${backup.connection_id}`);
+      toast.success(`Retry queued for "${backup.connection_name}"`);
+      // Optimistic refresh — server enqueues, we'll see new running row shortly.
+      setTimeout(() => fetchBackups(page), 1500);
+    } catch (err) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to retry";
+      toast.error(msg);
+    } finally {
+      setRetrying(null);
+    }
+  };
 
   const fetchBackups = (p = page) => {
     setLoading(true);
@@ -371,13 +389,24 @@ export default function BackupHistoryPage() {
                           </button>
                         </div>
                       ) : backup.status === "failed" ? (
-                        <button
-                          className="max-w-[200px] truncate font-jetbrains text-[10px] text-red-400/70 hover:text-red-300 text-left"
-                          title={backup.error_message}
-                          onClick={() => backup.error_message && toast.error(backup.error_message, { duration: 10000 })}
-                        >
-                          {backup.error_message || "Unknown error"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="max-w-[180px] truncate font-jetbrains text-[10px] text-red-400/70 hover:text-red-300 text-left"
+                            title={backup.error_message}
+                            onClick={() => backup.error_message && toast.error(backup.error_message, { duration: 10000 })}
+                          >
+                            {backup.error_message || "Unknown error"}
+                          </button>
+                          <button
+                            onClick={() => handleRetry(backup)}
+                            disabled={retrying === backup.id}
+                            className="flex items-center gap-1 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-300 transition hover:bg-amber-500/20 disabled:opacity-50"
+                            title="Re-run this backup"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${retrying === backup.id ? "animate-spin" : ""}`} />
+                            {retrying === backup.id ? "Retrying" : "Retry"}
+                          </button>
+                        </div>
                       ) : <span className="text-slate-700">—</span>}
                     </td>
                   </tr>
@@ -488,30 +517,37 @@ export default function BackupHistoryPage() {
                   </div>
                 </div>
               )}
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-                <p className="text-sm font-medium text-amber-300">This will overwrite your live database.</p>
-                <p className="mt-1 font-jetbrains text-xs text-amber-400/70">
-                  SnapBase will download the backup and run {
-                    restoreTarget?.connection_type === "postgres" ? "pg_restore" :
-                    restoreTarget?.connection_type === "mysql" ? "mysql" :
-                    restoreTarget?.connection_type === "mongodb" ? "mongorestore" : "restore"
-                  } directly against <strong className="text-amber-300">{restoreTarget?.connection_database || restoreTarget?.connection_name}</strong>.
-                </p>
+              <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                <p className="text-sm font-semibold text-red-300">⚠ Destructive action — this overwrites your live database</p>
+                <ul className="mt-2 space-y-0.5 font-jetbrains text-[11px] text-red-300/70">
+                  <li>• Existing tables will be dropped and re-created</li>
+                  <li>• All current data in <strong className="text-red-200">{restoreTarget?.connection_database || restoreTarget?.connection_name}</strong> will be replaced with the backup&apos;s contents</li>
+                  <li>• This cannot be undone — take a fresh backup first if you&apos;re unsure</li>
+                </ul>
               </div>
-              <label className="flex cursor-pointer items-start gap-2">
-                <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-[#00b4ff]" />
-                <span className="text-sm text-slate-300">I understand this will overwrite existing data</span>
-              </label>
+              <div className="space-y-1.5">
+                <label className="font-jetbrains text-[11px] uppercase tracking-widest text-slate-500">
+                  Type <span className="text-red-300">{restoreTarget?.connection_database || restoreTarget?.connection_name}</span> to confirm
+                </label>
+                <input
+                  value={confirmDbName}
+                  onChange={(e) => {
+                    setConfirmDbName(e.target.value);
+                    setConfirmed(e.target.value === (restoreTarget?.connection_database || restoreTarget?.connection_name));
+                  }}
+                  placeholder={restoreTarget?.connection_database || restoreTarget?.connection_name || ""}
+                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-jetbrains text-sm text-white placeholder:text-slate-700 focus:border-red-500/40 focus:outline-none"
+                />
+              </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setRestoreTarget(null)}
+                <button onClick={() => { setRestoreTarget(null); setConfirmDbName(""); setConfirmed(false); }}
                   className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-slate-400 transition hover:text-white">
                   Cancel
                 </button>
                 <button disabled={!confirmed} onClick={handleRestore}
                   className="flex items-center gap-1.5 rounded-xl px-5 py-2 text-sm font-semibold transition hover:opacity-90 disabled:opacity-40"
                   style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "#0a0f1e" }}>
-                  <RotateCcw className="h-3.5 w-3.5" />Restore Now
+                  <RotateCcw className="h-3.5 w-3.5" />Restore &amp; Overwrite
                 </button>
               </div>
             </div>

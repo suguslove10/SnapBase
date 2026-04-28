@@ -84,6 +84,10 @@ func main() {
 	orgHandler := &handlers.OrgHandler{DB: db, EmailConfig: emailCfg}
 	webhookHandler := &handlers.WebhookHandler{DB: db}
 	cliAuthHandler := &handlers.CLIAuthHandler{DB: db, Cfg: cfg}
+	referralHandler := &handlers.ReferralHandler{DB: db, Cfg: cfg}
+	storageAddonHandler := &handlers.StorageAddonHandler{DB: db, Cfg: cfg}
+	adminHandler := &handlers.AdminHandler{DB: db, Cfg: cfg}
+	statusHandler := &handlers.StatusHandler{DB: db, Cfg: cfg}
 
 	syncRunner := &syncpkg.Runner{DB: db, Cfg: cfg, Storage: store, BackupRunner: runner, EmailConfig: emailCfg}
 	syncHandler := handlers.NewSyncHandler(db, syncRunner, sched)
@@ -117,6 +121,7 @@ func main() {
 
 	// Public routes
 	r.POST("/api/billing/webhook", billingHandler.Webhook)
+	r.GET("/api/status", statusHandler.Status)
 	r.GET("/api/cli/auth/init", cliAuthHandler.Init)
 	r.GET("/api/cli/auth/poll/:token", cliAuthHandler.Poll)
 	r.GET("/api/invite/:token", orgHandler.GetInvite)
@@ -137,6 +142,8 @@ func main() {
 	api.Use(handlers.OrgContextMiddleware(db))
 	{
 		api.GET("/auth/me", authHandler.Me)
+		api.POST("/auth/refresh", authHandler.RefreshToken)
+		api.GET("/admin/metrics", adminHandler.Metrics)
 
 		api.GET("/connections", connHandler.List)
 		api.POST("/connections", connHandler.Create)
@@ -200,8 +207,19 @@ func main() {
 
 		api.GET("/billing/subscription", billingHandler.GetSubscription)
 		api.GET("/billing/usage", billingHandler.GetUsage)
-		api.POST("/billing/order", billingHandler.CreateOrder)
+		api.POST("/billing/checkout", billingHandler.Checkout)
 		api.POST("/billing/verify", billingHandler.VerifyPayment)
+		api.POST("/billing/cancel", billingHandler.CancelSubscription)
+		api.POST("/billing/resume", billingHandler.ResumeSubscription)
+		api.GET("/billing/invoices", billingHandler.ListInvoices)
+		api.POST("/billing/trial/start", billingHandler.StartTrial)
+
+		api.GET("/referrals/stats", referralHandler.Stats)
+
+		api.GET("/storage-addons", storageAddonHandler.List)
+		api.POST("/storage-addons/checkout", storageAddonHandler.Checkout)
+		api.POST("/storage-addons/verify", storageAddonHandler.Verify)
+		api.POST("/storage-addons/cancel", storageAddonHandler.Cancel)
 
 		api.GET("/org", orgHandler.GetOrg)
 		api.PUT("/org", orgHandler.UpdateOrg)
@@ -238,6 +256,73 @@ func main() {
 			if err == nil {
 				if n, _ := res.RowsAffected(); n > 0 {
 					log.Printf("[cleanup] deleted %d expired password reset token(s)", n)
+				}
+			}
+		}
+	}()
+
+	// Background job: lifecycle / onboarding email campaigns. Runs hourly,
+	// sending welcome / day-1 / day-3 / day-7 / day-13 emails to users who haven't received them yet.
+	go func() {
+		// Initial run a minute after startup so we catch any past-due sends quickly.
+		time.Sleep(60 * time.Second)
+		notifications.RunLifecycleJob(db, emailCfg, cfg.FrontendURL)
+		for range time.Tick(1 * time.Hour) {
+			notifications.RunLifecycleJob(db, emailCfg, cfg.FrontendURL)
+		}
+	}()
+
+	// Background job: weekly digest emails. Tick hourly, fire only on Monday 09:00 UTC.
+	// Idempotency on the email type (weekly-digest-YYYYWW) keeps repeat ticks safe.
+	go func() {
+		for range time.Tick(1 * time.Hour) {
+			n := time.Now().UTC()
+			if n.Weekday() == time.Monday && n.Hour() == 9 {
+				notifications.SendWeeklyDigests(db, emailCfg, cfg.FrontendURL)
+			}
+		}
+	}()
+
+	// Background job: storage overage tracking. Daily — record each user's peak
+	// monthly storage and compute overage GB for the current period at $0.05/GB.
+	go func() {
+		time.Sleep(120 * time.Second)
+		handlers.RecordStorageOverage(db)
+		for range time.Tick(24 * time.Hour) {
+			handlers.RecordStorageOverage(db)
+		}
+	}()
+
+	// Background job: verified restorability. Hourly — picks recent successful
+	// backups that haven't been verified, downloads + decrypts to confirm integrity.
+	go func() {
+		time.Sleep(180 * time.Second)
+		for range time.Tick(1 * time.Hour) {
+			backup.RunRestorabilityChecks(db, store, cfg)
+		}
+	}()
+
+	// Background job: record uptime checks every 60s for /status page.
+	go func() {
+		handlers.RecordUptimeChecks(db) // initial record on boot
+		for range time.Tick(60 * time.Second) {
+			handlers.RecordUptimeChecks(db)
+		}
+	}()
+
+	// Background job: expire trials and downgrade unpaid users hourly.
+	// getUserPlan already short-circuits expired trials, but this keeps DB rows tidy
+	// so admin views and webhooks work cleanly.
+	go func() {
+		for range time.Tick(1 * time.Hour) {
+			res, _ := db.Exec(`
+				UPDATE subscriptions
+				SET plan = 'free', status = 'expired', updated_at = NOW()
+				WHERE status = 'trialing' AND trial_ends_at < NOW() - INTERVAL '1 day'
+			`)
+			if res != nil {
+				if n, _ := res.RowsAffected(); n > 0 {
+					log.Printf("[trial] expired %d trial(s) to free plan", n)
 				}
 			}
 		}

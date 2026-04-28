@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,10 +16,16 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [oauthProviders, setOauthProviders] = useState<{ google: boolean; github: boolean }>({ google: false, github: false });
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const refCode = searchParams.get("ref") ?? "";
 
   useEffect(() => {
     api.get("/auth/providers").then((res) => setOauthProviders(res.data)).catch(() => {});
-  }, []);
+    // Persist ref code so OAuth flow keeps it after redirect.
+    if (refCode && typeof window !== "undefined") {
+      localStorage.setItem("snapbase_ref", refCode);
+    }
+  }, [refCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,9 +35,11 @@ export default function SignupPage() {
     setError("");
     setLoading(true);
     try {
-      await api.post("/auth/register", { email, password, name });
+      const ref = refCode || (typeof window !== "undefined" ? localStorage.getItem("snapbase_ref") || "" : "");
+      await api.post("/auth/register", { email, password, name, ref_code: ref });
       const res = await api.post("/auth/login", { email, password });
       localStorage.setItem("token", res.data.token);
+      if (typeof window !== "undefined") localStorage.removeItem("snapbase_ref");
       router.push("/dashboard");
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Registration failed";

@@ -74,11 +74,19 @@ function relativeTime(date: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function Sparkline({ color }: { color: string }) {
+function Sparkline({ color, values }: { color: string; values: number[] }) {
+  if (!values.length) {
+    return <div className="mt-2 h-[18px] w-20 opacity-20" />;
+  }
+  const w = 80, h = 18;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values);
+  const range = Math.max(max - min, 1);
+  const step = values.length > 1 ? w / (values.length - 1) : 0;
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / range) * h).toFixed(1)}`).join(" ");
   return (
-    <svg width="80" height="18" viewBox="0 0 80 18" className="mt-2 opacity-40">
-      <polyline fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-        points="0,15 10,12 20,14 30,9 40,11 50,5 60,7 70,2 80,4" />
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="mt-2 opacity-50">
+      <polyline fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" points={pts} />
     </svg>
   );
 }
@@ -136,6 +144,11 @@ export default function DashboardPage() {
     }
   }, [searchParams]);
 
+  // Derive sparkline series from real chartData (last 14 days where available).
+  const successSeries = chartData.slice(-14).map((d) => d.success);
+  const totalSeries = chartData.slice(-14).map((d) => d.success + d.failed);
+  const failedSeries = chartData.slice(-14).map((d) => d.failed);
+
   const statCards = stats ? [
     {
       label: "Total Backups",
@@ -144,6 +157,7 @@ export default function DashboardPage() {
       icon: Database,
       color: "#00b4ff",
       bg: "rgba(0,180,255,0.08)",
+      series: totalSeries,
     },
     {
       label: "Active Schedules",
@@ -152,6 +166,7 @@ export default function DashboardPage() {
       icon: CalendarClock,
       color: "#00ff88",
       bg: "rgba(0,255,136,0.08)",
+      series: successSeries,
     },
     {
       label: "Verification Rate",
@@ -160,6 +175,7 @@ export default function DashboardPage() {
       icon: ShieldCheck,
       color: "#00b4ff",
       bg: "rgba(0,180,255,0.08)",
+      series: successSeries,
     },
     {
       label: "Anomalies",
@@ -168,6 +184,7 @@ export default function DashboardPage() {
       icon: AlertTriangle,
       color: stats.unresolved_anomalies > 0 ? "#f87171" : "#00ff88",
       bg: stats.unresolved_anomalies > 0 ? "rgba(248,113,113,0.08)" : "rgba(0,255,136,0.08)",
+      series: failedSeries,
     },
     {
       label: "Last Backup",
@@ -176,6 +193,7 @@ export default function DashboardPage() {
       icon: stats.last_backup_status === "success" ? CheckCircle : XCircle,
       color: stats.last_backup_status === "success" ? "#00ff88" : "#f87171",
       bg: stats.last_backup_status === "success" ? "rgba(0,255,136,0.08)" : "rgba(248,113,113,0.08)",
+      series: successSeries,
     },
   ] : [];
 
@@ -315,7 +333,7 @@ export default function DashboardPage() {
                   <p className="mt-0.5 font-jetbrains text-[10px]" style={{ color: card.color, opacity: 0.7 }}>{card.sub}</p>
                 )}
               </div>
-              <Sparkline color={card.color} />
+              <Sparkline color={card.color} values={card.series} />
             </div>
           ))}
         </div>

@@ -25,4 +25,30 @@ api.interceptors.response.use(
   }
 );
 
+// Sliding-window token refresh: if the JWT is older than 24h but still valid,
+// silently exchange it for a fresh 7-day token in the background.
+if (typeof window !== "undefined") {
+  const tryRefresh = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const parts = token.split(".");
+      if (parts.length !== 3) return;
+      const payload = JSON.parse(atob(parts[1]));
+      const issuedAt = payload.iat ?? 0;
+      const ageHours = (Date.now() / 1000 - issuedAt) / 3600;
+      // Refresh if token is over 24h old (sliding session).
+      if (ageHours > 24 && issuedAt > 0) {
+        const res = await api.post("/auth/refresh");
+        if (res.data?.token) {
+          localStorage.setItem("token", res.data.token);
+        }
+      }
+    } catch { /* ignore — bad token will hit 401 path */ }
+  };
+  // Run on load and once per hour while the tab is open.
+  tryRefresh();
+  setInterval(tryRefresh, 60 * 60 * 1000);
+}
+
 export default api;

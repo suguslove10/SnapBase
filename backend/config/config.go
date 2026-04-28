@@ -24,6 +24,17 @@ type Config struct {
 	RazorpayKeyID            string
 	RazorpayKeySecret        string
 	RazorpayWebhookSecret    string
+	// Razorpay plan IDs — create plans in Razorpay dashboard, paste IDs here.
+	// Each plan represents a recurring price (monthly or annual).
+	RazorpayPlanProMonthly   string
+	RazorpayPlanProAnnual    string
+	RazorpayPlanTeamMonthly  string
+	RazorpayPlanTeamAnnual   string
+	RazorpayPlanBusinessMonthly string
+	RazorpayPlanBusinessAnnual  string
+	// Storage add-on plans
+	RazorpayPlanStorage50    string
+	RazorpayPlanStorage100   string
 	OpenAIAPIKey      string
 	Env               string // "production" | "development"
 }
@@ -51,6 +62,14 @@ func Load() *Config {
 		RazorpayKeyID:            getEnv("RAZORPAY_KEY_ID", ""),
 		RazorpayKeySecret:        getEnv("RAZORPAY_KEY_SECRET", ""),
 		RazorpayWebhookSecret:    getEnv("RAZORPAY_WEBHOOK_SECRET", ""),
+		RazorpayPlanProMonthly:   getEnv("RAZORPAY_PLAN_PRO_MONTHLY", ""),
+		RazorpayPlanProAnnual:    getEnv("RAZORPAY_PLAN_PRO_ANNUAL", ""),
+		RazorpayPlanTeamMonthly:  getEnv("RAZORPAY_PLAN_TEAM_MONTHLY", ""),
+		RazorpayPlanTeamAnnual:   getEnv("RAZORPAY_PLAN_TEAM_ANNUAL", ""),
+		RazorpayPlanBusinessMonthly: getEnv("RAZORPAY_PLAN_BUSINESS_MONTHLY", ""),
+		RazorpayPlanBusinessAnnual:  getEnv("RAZORPAY_PLAN_BUSINESS_ANNUAL", ""),
+		RazorpayPlanStorage50:    getEnv("RAZORPAY_PLAN_STORAGE_50GB", ""),
+		RazorpayPlanStorage100:   getEnv("RAZORPAY_PLAN_STORAGE_100GB", ""),
 		OpenAIAPIKey:      getEnv("OPENAI_API_KEY", ""),
 		Env:               getEnv("APP_ENV", "development"),
 	}

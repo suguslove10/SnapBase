@@ -5,7 +5,91 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { Copy, Gift } from "lucide-react";
 import api from "@/lib/api";
+
+interface ReferralStats {
+  code: string;
+  link: string;
+  signups: number;
+  paying_referrals: number;
+  earned_cents: number;
+  paid_out_cents: number;
+  pending_cents: number;
+  commission_rate: string;
+}
+
+function ReferralCard() {
+  const [stats, setStats] = useState<ReferralStats | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api.get("/referrals/stats").then((res) => setStats(res.data)).catch(() => {});
+  }, []);
+  const copy = () => {
+    if (!stats?.link) return;
+    navigator.clipboard.writeText(stats.link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  if (!stats) return null;
+  return (
+    <div
+      className="rounded-2xl"
+      style={{
+        background: "rgba(13,21,38,0.8)",
+        backdropFilter: "blur(12px)",
+        border: "1px solid rgba(168,139,250,0.18)",
+        overflow: "hidden",
+      }}
+    >
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-4">
+        <div className="flex items-center gap-2.5">
+          <Gift className="h-4 w-4 text-purple-400" />
+          <div>
+            <h2 className="font-grotesk text-sm font-semibold text-white">Refer & earn 20% recurring</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Share your link. We pay 20% of every payment, for the lifetime of the customer.</p>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-5 p-6">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <p className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Signups</p>
+            <p className="mt-1 font-grotesk text-lg font-bold text-white">{stats.signups}</p>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <p className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Paying</p>
+            <p className="mt-1 font-grotesk text-lg font-bold text-[#00ff88]">{stats.paying_referrals}</p>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <p className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Pending</p>
+            <p className="mt-1 font-grotesk text-lg font-bold text-amber-300">${(stats.pending_cents / 100).toFixed(2)}</p>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <p className="font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Lifetime earned</p>
+            <p className="mt-1 font-grotesk text-lg font-bold text-purple-400">${(stats.earned_cents / 100).toFixed(2)}</p>
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Your share link</p>
+          <div className="flex items-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/5 px-3 py-2">
+            <code className="flex-1 truncate font-jetbrains text-xs text-slate-300">{stats.link}</code>
+            <button
+              onClick={copy}
+              className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300 transition hover:bg-white/10"
+            >
+              <Copy className="h-3 w-3" />
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-600">
+            Payouts processed monthly via Razorpay once you accumulate $50+. Email <a href="mailto:hello@getsnapbase.com" className="text-purple-400 underline">hello@getsnapbase.com</a> with your details.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -231,6 +315,9 @@ export default function SettingsPage() {
         <h1 className="font-grotesk text-2xl font-bold text-white">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">Account, notifications, and compliance</p>
       </div>
+
+      {/* Refer & earn */}
+      <ReferralCard />
 
       {/* Profile */}
       <div style={sectionStyle}>

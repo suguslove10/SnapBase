@@ -30,6 +30,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required"`
 		Name     string `json:"name"`
+		RefCode  string `json:"ref_code"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -55,10 +56,20 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Resolve referrer if a referral code was passed.
+	var referredBy sql.NullInt64
+	if req.RefCode != "" {
+		var refID int
+		if err := h.DB.QueryRow("SELECT id FROM users WHERE referral_code = $1", req.RefCode).Scan(&refID); err == nil {
+			referredBy = sql.NullInt64{Int64: int64(refID), Valid: true}
+		}
+	}
+
 	var userID int
 	err = h.DB.QueryRow(
-		"INSERT INTO users (email, password_hash, name, provider) VALUES ($1, $2, $3, 'local') RETURNING id",
-		req.Email, string(hash), req.Name,
+		`INSERT INTO users (email, password_hash, name, provider, referral_code, referred_by)
+		 VALUES ($1, $2, $3, 'local', $4, $5) RETURNING id`,
+		req.Email, string(hash), req.Name, generateReferralCode(req.Email), referredBy,
 	).Scan(&userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
@@ -74,6 +85,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogAction(userID, "user.registered", "user", userID, nil, c.ClientIP())
 	}
+}
+
+// generateReferralCode produces a short, URL-safe code unique-ish per email.
+// Falls back to random if collision (caller can retry; we keep it best-effort).
+func generateReferralCode(email string) string {
+	b := make([]byte, 5)
+	if _, err := rand.Read(b); err != nil {
+		return "snap" + email
+	}
+	return strings.ToLower(hex.EncodeToString(b))
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -96,13 +117,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": user.ID,
-		"email":   user.Email,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
-	})
-
-	tokenString, err := token.SignedString([]byte(h.Cfg.JWTSecret))
+	tokenString, err := signSessionToken(h.Cfg.JWTSecret, user.ID, user.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
@@ -114,6 +129,30 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogAction(user.ID, "user.login", "user", user.ID, nil, c.ClientIP())
 	}
+}
+
+// signSessionToken issues a 7-day JWT. Tokens auto-renew on activity via /auth/refresh.
+func signSessionToken(secret string, userID int, email string) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": userID,
+		"email":   email,
+		"iat":     time.Now().Unix(),
+		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
+	})
+	return token.SignedString([]byte(secret))
+}
+
+// RefreshToken issues a new 7-day token if the current one is still valid.
+// Frontend calls this opportunistically; client uses sliding-window auth.
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	userID := c.GetInt("user_id")
+	email := c.GetString("email")
+	tok, err := signSessionToken(h.Cfg.JWTSecret, userID, email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to refresh"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": tok})
 }
 
 func (h *AuthHandler) Me(c *gin.Context) {

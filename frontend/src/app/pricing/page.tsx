@@ -21,7 +21,7 @@ const tiers = [
     annualTotal: 0,
     description: "For side projects and personal use",
     features: [
-      "1 database connection",
+      "2 database connections",
       "Daily backups only",
       "1 GB storage",
       "7 day retention",
@@ -36,8 +36,8 @@ const tiers = [
   {
     name: "Pro",
     monthly: 9,
-    annual: 7,
-    annualTotal: 84,
+    annual: 7.5,
+    annualTotal: 90,
     description: "For growing teams and production databases",
     features: [
       "5 database connections",
@@ -47,31 +47,55 @@ const tiers = [
       "Email + Slack notifications",
       "Backup verification",
       "One-click restore",
+      "Webhooks + Pre/Post hooks",
+      "AI Schema Insights",
       "Priority support",
     ],
-    cta: "Start Free Trial",
+    cta: "Start 14-day Free Trial",
     href: "/login",
     highlighted: true,
     enterprise: false,
   },
   {
     name: "Team",
-    monthly: 29,
-    annual: 23,
-    annualTotal: 276,
-    description: "For organizations with compliance needs",
+    monthly: 49,
+    annual: 41,
+    annualTotal: 490,
+    description: "For organizations with multiple environments",
     features: [
       "Unlimited database connections",
       "100 GB storage",
       "90 day retention",
       "Everything in Pro",
-      "5 team members",
+      "5 team members + RBAC",
+      "DB Sync (prod → staging)",
       "Audit log",
       "Compliance PDF export",
-      "PagerDuty integration",
       "SLA guarantee",
     ],
     cta: "Upgrade to Team",
+    href: "/login",
+    highlighted: false,
+    enterprise: false,
+  },
+  {
+    name: "Business",
+    monthly: 149,
+    annual: 124,
+    annualTotal: 1490,
+    description: "For compliance-driven & regulated workloads",
+    features: [
+      "Everything in Team",
+      "500 GB storage",
+      "365 day retention",
+      "25 team members",
+      "HIPAA BAA + SOC2 report",
+      "Immutable backups (WORM)",
+      "Auto test-restore weekly",
+      "Cross-region replication",
+      "Dedicated Slack channel",
+    ],
+    cta: "Upgrade to Business",
     href: "/login",
     highlighted: false,
     enterprise: false,
@@ -83,8 +107,7 @@ const tiers = [
     annualTotal: -1,
     description: "For large-scale deployments and custom needs",
     features: [
-      "Unlimited connections",
-      "Unlimited storage",
+      "Unlimited everything",
       "Custom retention policy",
       "Dedicated infrastructure",
       "SSO / SAML",
@@ -130,16 +153,15 @@ export default function PricingPage() {
   const handleCheckout = async (plan: string) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) {
-      router.push("/login?redirect=/pricing");
+      router.push(`/login?redirect=/pricing&plan=${plan}`);
       return;
     }
     setLoadingPlan(plan);
+    const period = annual ? "annual" : "monthly";
     try {
-      // Create Razorpay order
-      const orderRes = await api.post("/billing/order", { plan });
-      const { order_id, amount, currency, key_id } = orderRes.data;
+      const checkoutRes = await api.post("/billing/checkout", { plan, period });
+      const { subscription_id, key_id } = checkoutRes.data;
 
-      // Load Razorpay script dynamically
       await new Promise<void>((resolve, reject) => {
         if (window.Razorpay) { resolve(); return; }
         const script = document.createElement("script");
@@ -149,7 +171,6 @@ export default function PricingPage() {
         document.body.appendChild(script);
       });
 
-      // Get user email from localStorage token (decode JWT)
       let userEmail = "";
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
@@ -158,19 +179,16 @@ export default function PricingPage() {
 
       const options = {
         key: key_id,
-        amount,
-        currency,
+        subscription_id,
         name: "SnapBase",
-        description: plan === "pro" ? "SnapBase Pro - Monthly" : "SnapBase Team - Monthly",
-        order_id,
+        description: `SnapBase ${plan[0].toUpperCase()}${plan.slice(1)} — ${period === "annual" ? "Annual" : "Monthly"}`,
         prefill: { email: userEmail },
         theme: { color: "#00b4ff" },
-        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+        handler: async (response: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => {
           await api.post("/billing/verify", {
-            razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_subscription_id: response.razorpay_subscription_id,
             razorpay_signature: response.razorpay_signature,
-            plan,
           });
           window.location.href = "/dashboard?upgraded=true";
         },
@@ -182,8 +200,10 @@ export default function PricingPage() {
       const rzp = new window.Razorpay(options);
       rzp.open();
       setLoadingPlan(null);
-    } catch {
+    } catch (err) {
       setLoadingPlan(null);
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (msg) alert(msg);
     }
   };
 
@@ -266,15 +286,15 @@ export default function PricingPage() {
           <span className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${annual ? "text-white" : "text-slate-500"}`}>
             Annual
             <span className="rounded-full bg-[#00ff88]/10 px-2 py-0.5 font-jetbrains text-[10px] font-semibold text-[#00ff88]">
-              Save 20%
+              Save 17%
             </span>
           </span>
         </div>
       </section>
 
       {/* Pricing cards */}
-      <section className="relative z-10 mx-auto max-w-6xl px-6 py-16">
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <section className="relative z-10 mx-auto max-w-7xl px-6 py-16">
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {tiers.map((tier) => {
             const price = annual ? tier.annual : tier.monthly;
             return (
@@ -366,13 +386,13 @@ export default function PricingPage() {
                     >
                       {tier.cta}
                     </Link>
-                  ) : tier.name === "Team" ? (
+                  ) : tier.name === "Team" || tier.name === "Business" ? (
                     <button
-                      onClick={() => handleCheckout("team")}
-                      disabled={loadingPlan === "team"}
+                      onClick={() => handleCheckout(tier.name.toLowerCase())}
+                      disabled={loadingPlan === tier.name.toLowerCase()}
                       className="mt-6 w-full rounded-xl py-2.5 text-center text-sm font-semibold transition border border-white/[0.10] text-slate-300 hover:border-[#00b4ff]/30 hover:text-white disabled:opacity-60"
                     >
-                      {loadingPlan === "team" ? "Redirecting…" : tier.cta}
+                      {loadingPlan === tier.name.toLowerCase() ? "Redirecting…" : tier.cta}
                     </button>
                   ) : (
                     <button

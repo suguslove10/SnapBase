@@ -316,6 +316,90 @@ func createTables(db *sql.DB) {
 			size_spike_threshold FLOAT NOT NULL DEFAULT 3.0,
 			updated_at TIMESTAMP DEFAULT NOW()
 		)`,
+		// Recurring billing migrations
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS razorpay_customer_id VARCHAR(255)`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS razorpay_subscription_id VARCHAR(255)`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_period VARCHAR(20) DEFAULT 'monthly'`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_amount_cents INTEGER DEFAULT 0`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMP`,
+		`CREATE INDEX IF NOT EXISTS idx_subs_razorpay_sub ON subscriptions(razorpay_subscription_id)`,
+		// Invoices — local cache for /billing/invoices listing
+		`CREATE TABLE IF NOT EXISTS invoices (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			razorpay_invoice_id VARCHAR(255),
+			razorpay_payment_id VARCHAR(255),
+			razorpay_subscription_id VARCHAR(255),
+			amount_cents INTEGER NOT NULL,
+			currency VARCHAR(10) NOT NULL DEFAULT 'USD',
+			status VARCHAR(20) NOT NULL DEFAULT 'paid',
+			description TEXT,
+			invoice_url TEXT,
+			paid_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id, created_at DESC)`,
+		// Storage add-on packs (recurring subscriptions for extra storage)
+		`CREATE TABLE IF NOT EXISTS storage_addons (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			razorpay_subscription_id VARCHAR(255),
+			pack_size_gb INTEGER NOT NULL,
+			amount_cents INTEGER NOT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'active',
+			current_period_end TIMESTAMP,
+			created_at TIMESTAMP DEFAULT NOW(),
+			cancelled_at TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_storage_addons_user ON storage_addons(user_id, status)`,
+		// Storage overage tracking — billed monthly
+		`CREATE TABLE IF NOT EXISTS storage_overage (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			period_start DATE NOT NULL,
+			period_end DATE NOT NULL,
+			peak_bytes BIGINT NOT NULL DEFAULT 0,
+			overage_gb FLOAT NOT NULL DEFAULT 0,
+			amount_cents INTEGER NOT NULL DEFAULT 0,
+			charged BOOLEAN DEFAULT false,
+			razorpay_invoice_id VARCHAR(255),
+			created_at TIMESTAMP DEFAULT NOW(),
+			UNIQUE(user_id, period_start)
+		)`,
+		// Lifecycle email tracking — prevents duplicate sends
+		`CREATE TABLE IF NOT EXISTS lifecycle_emails (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			email_type VARCHAR(50) NOT NULL,
+			sent_at TIMESTAMP DEFAULT NOW(),
+			UNIQUE(user_id, email_type)
+		)`,
+		// Referral / affiliate program
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by INTEGER REFERENCES users(id)`,
+		`CREATE TABLE IF NOT EXISTS referral_credits (
+			id SERIAL PRIMARY KEY,
+			referrer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			referred_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+			amount_cents INTEGER NOT NULL,
+			source_invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+			paid_out BOOLEAN DEFAULT false,
+			created_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_referral_credits_referrer ON referral_credits(referrer_id)`,
+		// Backup verified-restore tracking (Verified Restorability feature)
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS test_restored_at TIMESTAMP`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS test_restore_status VARCHAR(20)`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS test_restore_error TEXT`,
+		// Status page checks — uptime tracking
+		`CREATE TABLE IF NOT EXISTS uptime_checks (
+			id SERIAL PRIMARY KEY,
+			component VARCHAR(50) NOT NULL,
+			status VARCHAR(20) NOT NULL,
+			latency_ms INTEGER,
+			checked_at TIMESTAMP DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_uptime_checks ON uptime_checks(component, checked_at DESC)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m)

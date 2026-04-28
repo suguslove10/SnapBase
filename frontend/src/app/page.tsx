@@ -153,7 +153,7 @@ function DashboardPreview() {
             <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
           </div>
           <div className="ml-3 flex-1 rounded-md border border-white/[0.06] bg-white/[0.03] px-3 py-1 font-jetbrains text-[11px] text-slate-500">
-            app.snapbase.io/dashboard
+            getsnapbase.com/dashboard
           </div>
         </div>
         {/* Dashboard mockup */}
@@ -275,27 +275,27 @@ export default function LandingPage() {
         <DashboardPreview />
       </div>
 
-      {/* Stats bar */}
-      <div className="relative z-10 mx-auto mt-16 max-w-3xl border-y border-white/[0.06] py-7">
-        <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-slate-500">
-          <span>
-            <strong className="font-grotesk text-white">2,847</strong>
-            <span className="ml-1.5">backups protected</span>
+      {/* Trust bar — focuses on guarantees, not made-up usage stats */}
+      <div className="relative z-10 mx-auto mt-16 max-w-4xl border-y border-white/[0.06] py-7">
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-slate-500">
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-[#00b4ff]" />
+            <span>AES-256 encrypted at rest</span>
           </span>
           <span className="text-white/10">|</span>
-          <span>
-            <strong className="font-grotesk text-white">4</strong>
-            <span className="ml-1.5">database types</span>
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-[#00ff88]" />
+            <span>30-day money-back guarantee</span>
           </span>
           <span className="text-white/10">|</span>
-          <span>
-            <strong className="font-grotesk text-white">99.9%</strong>
-            <span className="ml-1.5">uptime</span>
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-[#00f5d4]" />
+            <span>Zero-knowledge backup encryption</span>
           </span>
           <span className="text-white/10">|</span>
-          <span>
-            <strong className="font-grotesk text-white">12</strong>
-            <span className="ml-1.5">features shipped</span>
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-purple-400" />
+            <span>Self-hostable, fully open</span>
           </span>
         </div>
       </div>
@@ -449,6 +449,53 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Comparison */}
+      <section className="relative z-10 mx-auto max-w-5xl px-6 pb-20">
+        <div className="mb-10 text-center">
+          <h2 className="font-grotesk text-3xl font-bold text-white md:text-4xl">
+            How SnapBase compares
+          </h2>
+          <p className="mt-3 text-slate-400">vs. rolling your own, or other DB backup tools.</p>
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-white/[0.06]" style={{ background: "rgba(13,21,38,0.7)" }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06]">
+                  <th className="px-6 py-4 text-left font-jetbrains text-[10px] uppercase tracking-widest text-slate-500">Feature</th>
+                  <th className="px-4 py-4 text-center font-grotesk text-sm font-semibold text-[#00b4ff]">SnapBase</th>
+                  <th className="px-4 py-4 text-center font-grotesk text-sm font-semibold text-slate-400">pg_dump + cron</th>
+                  <th className="px-4 py-4 text-center font-grotesk text-sm font-semibold text-slate-400">SimpleBackups</th>
+                  <th className="px-4 py-4 text-center font-grotesk text-sm font-semibold text-slate-400">AWS Backup</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {[
+                  { f: "Multi-DB (Postgres / MySQL / Mongo / SQLite)", s: "✓", a: "manual", b: "✓", c: "RDS only" },
+                  { f: "Setup time",        s: "60 sec",  a: "hours",   b: "5 min",   c: "30+ min" },
+                  { f: "AES-256 encryption + zero-knowledge",       s: "✓", a: "DIY",     b: "✓", c: "✓" },
+                  { f: "Point-in-time + verified restore",          s: "✓", a: "DIY",     b: "limited", c: "✓" },
+                  { f: "Webhooks + Slack + AI insights",            s: "✓", a: "—",      b: "—", c: "—" },
+                  { f: "Pre/post backup hooks",                     s: "✓", a: "scripts", b: "—", c: "—" },
+                  { f: "Storage in your S3/R2/B2 bucket",           s: "✓", a: "DIY",     b: "✓", c: "AWS only" },
+                  { f: "DB Sync (prod → staging)",                  s: "✓", a: "—",      b: "—", c: "—" },
+                  { f: "Starting price",                            s: "$0", a: "$0 + ops", b: "$19/mo", c: "AWS $$" },
+                  { f: "Open source / self-hostable",               s: "✓", a: "yes",     b: "—", c: "—" },
+                ].map((row) => (
+                  <tr key={row.f} className="text-slate-300">
+                    <td className="px-6 py-3 text-xs">{row.f}</td>
+                    <td className="px-4 py-3 text-center text-sm font-semibold text-[#00ff88]">{row.s}</td>
+                    <td className="px-4 py-3 text-center text-xs text-slate-500">{row.a}</td>
+                    <td className="px-4 py-3 text-center text-xs text-slate-500">{row.b}</td>
+                    <td className="px-4 py-3 text-center text-xs text-slate-500">{row.c}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="relative z-10 mx-auto max-w-3xl px-6 py-20 text-center">
         <div
@@ -462,8 +509,12 @@ export default function LandingPage() {
             Start protecting your databases today
           </h2>
           <p className="mx-auto mt-4 max-w-md text-slate-400">
-            Free plan available. Pro from $9/mo. Team plan for unlimited power. No credit card required.
+            14-day free Pro trial · No credit card required · 30-day money-back guarantee.
           </p>
+          <div className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-[#00ff88]/20 bg-[#00ff88]/5 px-3 py-1">
+            <ShieldCheck className="h-3.5 w-3.5 text-[#00ff88]" />
+            <span className="font-jetbrains text-[11px] text-[#00ff88]">Cancel anytime · Full refund within 30 days</span>
+          </div>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link
               href="/login"

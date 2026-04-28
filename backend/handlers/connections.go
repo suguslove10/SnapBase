@@ -85,21 +85,28 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Plan enforcement: free=1 connection, pro=5, team=unlimited
+	// Plan enforcement — count org-aware so users can't bypass via org membership.
 	plan := getUserPlan(h.DB, userID)
-	if plan == "free" || plan == "pro" {
+	limit := connectionLimitForPlan(plan)
+	if limit > 0 {
 		var count int
-		h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE user_id = $1", userID).Scan(&count)
-		limit := 1
-		if plan == "pro" {
-			limit = 5
+		if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
+			h.DB.QueryRow(
+				"SELECT COUNT(*) FROM db_connections WHERE org_id = $1 OR (org_id IS NULL AND user_id = $2)",
+				orgIDRaw, userID,
+			).Scan(&count)
+		} else {
+			h.DB.QueryRow("SELECT COUNT(*) FROM db_connections WHERE user_id = $1", userID).Scan(&count)
 		}
 		if count >= limit {
-			if plan == "free" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Free plan is limited to 1 connection. Upgrade to Pro for up to 5 connections.", "upgrade_required": true})
-			} else {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Pro plan is limited to 5 connections. Upgrade to Team for unlimited connections.", "upgrade_required": true})
+			msg := fmt.Sprintf("Your %s plan allows %d connection(s). Upgrade for more.", plan, limit)
+			switch plan {
+			case "free":
+				msg = "Free plan is limited to 2 connections. Upgrade to Pro for 5 connections."
+			case "pro":
+				msg = "Pro plan is limited to 5 connections. Upgrade to Team for unlimited connections."
 			}
+			c.JSON(http.StatusForbidden, gin.H{"error": msg, "upgrade_required": true, "current_plan": plan, "limit": limit})
 			return
 		}
 	}
@@ -695,10 +702,26 @@ func getRetentionLimit(plan string) int {
 	switch plan {
 	case "pro":
 		return 30
-	case "team", "enterprise":
+	case "team":
 		return 90
+	case "business":
+		return 365
+	case "enterprise":
+		return 3650
 	default: // free
 		return 7
+	}
+}
+
+// connectionLimitForPlan returns the max connections for a plan; 0 = unlimited.
+func connectionLimitForPlan(plan string) int {
+	switch plan {
+	case "pro":
+		return 5
+	case "team", "business", "enterprise":
+		return 0
+	default: // free
+		return 2
 	}
 }
 

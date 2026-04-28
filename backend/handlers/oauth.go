@@ -12,10 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/suguslove10/snapbase/config"
 )
@@ -305,13 +303,8 @@ func (h *OAuthHandler) oauthLoginOrCreate(c *gin.Context, provider, providerID, 
 		h.DB.Exec("UPDATE users SET avatar_url = $1, name = $2 WHERE id = $3", avatarURL, name, userID)
 	}
 
-	// Generate JWT
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": userID,
-		"email":   userEmail,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
-	})
-	tokenString, err := token.SignedString([]byte(h.Cfg.JWTSecret))
+	// Generate 7-day JWT (matches signSessionToken in auth.go).
+	tokenString, err := signSessionToken(h.Cfg.JWTSecret, userID, userEmail)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
