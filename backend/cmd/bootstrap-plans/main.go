@@ -34,8 +34,8 @@ var plans = []planSpec{
 	{"RAZORPAY_PLAN_TEAM_ANNUAL", "team:annual", "yearly", "SnapBase Team (annual)", "Team plan — billed annually, 17% off", 49000},
 	{"RAZORPAY_PLAN_BUSINESS_MONTHLY", "business:monthly", "monthly", "SnapBase Business (monthly)", "Business plan — 500GB, 365-day retention, 25 seats", 14900},
 	{"RAZORPAY_PLAN_BUSINESS_ANNUAL", "business:annual", "yearly", "SnapBase Business (annual)", "Business plan — billed annually, 17% off", 149000},
-	{"RAZORPAY_PLAN_STORAGE_50", "storage:50", "monthly", "SnapBase Storage +50GB", "Add-on: extra 50GB storage", 500},
-	{"RAZORPAY_PLAN_STORAGE_100", "storage:100", "monthly", "SnapBase Storage +100GB", "Add-on: extra 100GB storage", 900},
+	{"RAZORPAY_PLAN_STORAGE_50GB", "storage:50", "monthly", "SnapBase Storage +50GB", "Add-on: extra 50GB storage", 500},
+	{"RAZORPAY_PLAN_STORAGE_100GB", "storage:100", "monthly", "SnapBase Storage +100GB", "Add-on: extra 100GB storage", 900},
 }
 
 func main() {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,14 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<div style={{ background: "#0a0f1e", minHeight: "100vh" }} />}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
