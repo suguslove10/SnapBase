@@ -4,10 +4,22 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"time"
 )
+
+// envelopeAddress strips any display name from cfg.From for the SMTP MAIL FROM
+// command. cfg.From may be either "name@example.com" or "Display Name <name@example.com>";
+// the SMTP envelope only accepts the bare address.
+func envelopeAddress(from string) string {
+	addr, err := mail.ParseAddress(from)
+	if err != nil {
+		return from
+	}
+	return addr.Address
+}
 
 type EmailConfig struct {
 	Host     string
@@ -142,7 +154,7 @@ func sendEmail(cfg *EmailConfig, to, subject, plainText, htmlBody string) {
 	addr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
 	auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
 
-	err := smtp.SendMail(addr, auth, cfg.From, []string{to}, msg.Bytes())
+	err := smtp.SendMail(addr, auth, envelopeAddress(cfg.From), []string{to}, msg.Bytes())
 	if err != nil {
 		log.Printf("Failed to send email to %s: %v", to, err)
 		return
