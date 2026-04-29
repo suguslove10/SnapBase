@@ -284,7 +284,7 @@ export default function SyncPage() {
             Sync data from one database to another on a schedule.
           </p>
         </div>
-        {plan === "team" ? (
+        {(plan === "team" || plan === "business" || plan === "enterprise") ? (
           <button
             onClick={openCreate}
             className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
@@ -313,7 +313,7 @@ export default function SyncPage() {
           <ArrowLeftRight className="h-10 w-10 text-slate-700" />
           <p className="font-grotesk text-sm font-semibold text-white">No sync jobs yet</p>
           <p className="text-xs text-slate-500">Sync prod data to staging automatically.</p>
-          {plan === "team" ? (
+          {(plan === "team" || plan === "business" || plan === "enterprise") ? (
             <button
               onClick={openCreate}
               className="mt-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
