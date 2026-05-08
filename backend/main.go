@@ -144,6 +144,8 @@ func main() {
 		api.GET("/auth/me", authHandler.Me)
 		api.POST("/auth/refresh", authHandler.RefreshToken)
 		api.GET("/admin/metrics", adminHandler.Metrics)
+		api.GET("/admin/users", adminHandler.ListUsers)
+		api.GET("/admin/users/:id", adminHandler.UserDetail)
 
 		api.GET("/connections", connHandler.List)
 		api.POST("/connections", connHandler.Create)

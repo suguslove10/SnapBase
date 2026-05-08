@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TrendingUp, Users, Sparkles, AlertTriangle, DollarSign, BarChart3 } from "lucide-react";
+import Link from "next/link";
+import { TrendingUp, Users, Sparkles, AlertTriangle, DollarSign, BarChart3, ArrowRight } from "lucide-react";
 import api from "@/lib/api";
 
 interface Metrics {
@@ -67,11 +68,19 @@ export default function AdminMetricsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <h1 className="font-grotesk text-2xl font-bold text-white">Admin Metrics</h1>
           <p className="mt-1 text-sm text-slate-500">Business KPIs · {new Date(m.generated_at).toLocaleString()}</p>
         </div>
+        <Link
+          href="/admin/users"
+          className="inline-flex items-center gap-2 rounded-lg border border-[#00b4ff]/30 bg-[#00b4ff]/10 px-4 py-2 text-sm font-medium text-[#00b4ff] transition-colors hover:bg-[#00b4ff]/15"
+        >
+          <Users className="h-4 w-4" />
+          User observability
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
