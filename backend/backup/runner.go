@@ -406,13 +406,18 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		return "", fmt.Errorf("unsupported database type: %s", conn.Type)
 	}
 
+	var stderrBuf strings.Builder
 	cmd.Stdout = gzWriter
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
 
 	if err := cmd.Run(); err != nil {
 		gzWriter.Close()
 		tmpFile.Close()
 		os.Remove(tmpPath)
+		errMsg := stderrBuf.String()
+		if errMsg != "" {
+			return "", fmt.Errorf("backup command failed: %s (%w)", strings.TrimSpace(errMsg), err)
+		}
 		return "", fmt.Errorf("backup command failed: %w", err)
 	}
 
