@@ -242,7 +242,7 @@ export default function AdminUsersPage() {
   );
 }
 
-function SummaryCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: number; color: string }) {
+function SummaryCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: number; color: string }) {
   return (
     <div className="rounded-2xl p-5" style={{ ...cardStyle, background: `${color}08`, borderColor: `${color}25` }}>
       <div className="flex items-center justify-between">

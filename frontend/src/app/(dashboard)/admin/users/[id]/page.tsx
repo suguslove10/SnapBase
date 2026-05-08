@@ -290,7 +290,7 @@ export default function AdminUserDetailPage() {
   );
 }
 
-function Stat({ icon: Icon, label, value, sub, color }: { icon: any; label: string; value: string; sub?: string; color: string }) {
+function Stat({ icon: Icon, label, value, sub, color }: { icon: React.ElementType; label: string; value: string; sub?: string; color: string }) {
   return (
     <div className="rounded-2xl p-5" style={{ ...cardStyle, background: `${color}08`, borderColor: `${color}25` }}>
       <div className="flex items-center justify-between">
