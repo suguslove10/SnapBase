@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { GitBranch, Plus, Copy, Trash2, Check, RefreshCw, Layers, ShieldCheck, Terminal } from "lucide-react";
+import { GitBranch, Plus, Trash2, RefreshCw, Layers, ShieldCheck, Terminal } from "lucide-react";
 import api from "@/lib/api";
 
 interface DBConnection {
@@ -30,7 +30,6 @@ export default function BranchingPage() {
   const [selectedConnId, setSelectedConnId] = useState<string>("");
   const [branchNameInput, setBranchNameInput] = useState("");
   const [provisioning, setProvisioning] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
   const fetchData = async () => {
@@ -43,8 +42,7 @@ export default function BranchingPage() {
       ]);
       setBranches(branchRes.data.branches || []);
       setConnections(connRes.data || []);
-    } catch (err: any) {
-      console.error(err);
+    } catch {
       setErrorMsg("Failed to load branching data");
     } finally {
       setLoading(false);
@@ -62,15 +60,16 @@ export default function BranchingPage() {
     setProvisioning(true);
     setErrorMsg("");
     try {
-      const res = await api.post("/branching/create", {
+      await api.post("/branching/create", {
         connection_id: parseInt(selectedConnId),
         branch_name: branchNameInput.trim(),
       });
       setShowModal(false);
       setBranchNameInput("");
       fetchData();
-    } catch (err: any) {
-      setErrorMsg(err.response?.data?.error || "Failed to provision branch");
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setErrorMsg(error.response?.data?.error || "Failed to provision branch");
     } finally {
       setProvisioning(false);
     }
@@ -81,15 +80,10 @@ export default function BranchingPage() {
     try {
       await api.delete(`/branching/${name}`);
       fetchData();
-    } catch (err: any) {
-      alert(err.response?.data?.error || "Failed to delete branch");
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      alert(error.response?.data?.error || "Failed to delete branch");
     }
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
   };
 
   return (
