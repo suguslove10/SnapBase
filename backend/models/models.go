@@ -53,6 +53,9 @@ type BackupJob struct {
 	Encrypted           bool       `json:"encrypted"`
 	Verified            *bool      `json:"verified"`
 	VerifiedAt          *time.Time `json:"verified_at,omitempty"`
+	ProgressBytes       int64      `json:"progress_bytes"`
+	ProgressStage       string     `json:"progress_stage"`
+	ProgressPercent     int        `json:"progress_percent"`
 	VerificationDetails string     `json:"verification_details,omitempty"`
 	VerificationError   string     `json:"verification_error,omitempty"`
 }

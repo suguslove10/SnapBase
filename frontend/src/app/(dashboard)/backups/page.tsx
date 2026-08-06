@@ -25,6 +25,9 @@ interface Backup {
   encrypted: boolean;
   verified: boolean | null;
   verification_error: string | null;
+  progress_bytes?: number;
+  progress_stage?: string;
+  progress_percent?: number;
 }
 
 function formatBytes(bytes: number | null): string {
@@ -60,7 +63,7 @@ function duration(started: string | null, completed: string | null): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, stage, percent }: { status: string; stage?: string; percent?: number }) {
   const map: Record<string, { color: string; bg: string; pulse?: boolean }> = {
     success: { color: "#00ff88", bg: "rgba(0,255,136,0.10)" },
     failed:  { color: "#f87171", bg: "rgba(248,113,113,0.10)" },
@@ -68,10 +71,17 @@ function StatusBadge({ status }: { status: string }) {
   };
   const s = map[status] || { color: "#64748b", bg: "rgba(100,116,139,0.10)" };
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 font-jetbrains text-[11px] font-medium" style={{ background: s.bg, color: s.color }}>
-      <span className={`h-1.5 w-1.5 rounded-full ${s.pulse ? "animate-pulse" : ""}`} style={{ background: s.color }} />
-      {status}
-    </span>
+    <div className="flex flex-col gap-1">
+      <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 font-jetbrains text-[11px] font-medium" style={{ background: s.bg, color: s.color }}>
+        <span className={`h-1.5 w-1.5 rounded-full ${s.pulse ? "animate-pulse" : ""}`} style={{ background: s.color }} />
+        {status === "running" ? `${stage || "dumping"}...` : status}
+      </span>
+      {status === "running" && (
+        <div className="h-1.5 w-24 rounded-full bg-white/10 overflow-hidden">
+          <div className="h-full bg-[#fbbf24] transition-all duration-300 animate-pulse" style={{ width: `${Math.max(15, percent || 15)}%` }} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -225,6 +235,20 @@ export default function BackupHistoryPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchBackups(page); }, [page]);
+
+  useEffect(() => {
+    const hasRunning = backups.some((b) => b.status === "running");
+    if (!hasRunning) return;
+    const interval = setInterval(() => {
+      api.get(`/backups?page=${page}&limit=${limit}`).then((res) => {
+        setBackups(res.data.items ?? res.data);
+        setTotal(res.data.total ?? 0);
+        setTotalPages(res.data.total_pages ?? 1);
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [backups, page, limit]);
+
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
@@ -367,8 +391,10 @@ export default function BackupHistoryPage() {
                       {backup.started_at && <p className="font-jetbrains text-[10px] text-slate-600">{relativeTime(backup.started_at)}</p>}
                     </td>
                     <td className="px-4 py-3 font-jetbrains text-xs text-slate-500">{duration(backup.started_at, backup.completed_at)}</td>
-                    <td className="px-4 py-3 font-jetbrains text-xs text-slate-500">{formatBytes(backup.size_bytes)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={backup.status} /></td>
+                    <td className="px-4 py-3 font-jetbrains text-xs text-slate-500">
+                      {backup.status === "running" ? formatBytes(backup.progress_bytes || null) : formatBytes(backup.size_bytes)}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={backup.status} stage={backup.progress_stage} percent={backup.progress_percent} /></td>
                     <td className="px-4 py-3"><VerifiedBadge backup={backup} onClickError={setVerifyError} /></td>
                     <td className="px-4 py-3">
                       {backup.status === "success" ? (
@@ -388,6 +414,13 @@ export default function BackupHistoryPage() {
                             <RotateCcw className="h-3 w-3" />
                             Restore
                           </button>
+                        </div>
+                      ) : backup.status === "running" ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-jetbrains text-[11px] text-amber-400 animate-pulse flex items-center gap-1">
+                            <RefreshCw className="h-3 w-3 animate-spin text-amber-400" />
+                            {backup.progress_stage || "dumping"} ({backup.progress_percent || 15}%)
+                          </span>
                         </div>
                       ) : backup.status === "failed" ? (
                         <div className="flex items-center gap-2">

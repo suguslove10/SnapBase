@@ -103,6 +103,9 @@ func createTables(db *sql.DB) {
 		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS restore_status VARCHAR(50)`,
 		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS restored_at TIMESTAMP`,
 		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS verified BOOLEAN`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS progress_bytes BIGINT DEFAULT 0`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS progress_stage VARCHAR(50) DEFAULT 'pending'`,
+		`ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS progress_percent INT DEFAULT 0`,
 		`CREATE TABLE IF NOT EXISTS audit_logs (
 			id SERIAL PRIMARY KEY,
 			user_id INTEGER REFERENCES users(id),

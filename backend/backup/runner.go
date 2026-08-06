@@ -58,6 +58,8 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 		return
 	}
 
+	r.updateProgress(jobID, "dumping", 0, 10)
+
 	// Get user email for notifications
 	var userEmail string
 	r.DB.QueryRow("SELECT email FROM users WHERE id = $1", conn.UserID).Scan(&userEmail)
@@ -108,6 +110,7 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	var encTmpFile string
 
 	if encEnabled && encKeyEnc != "" {
+		r.updateProgress(jobID, "encrypting", 0, 60)
 		// Decrypt the stored key
 		plainKey, err := crypto.Decrypt(encKeyEnc)
 		if err != nil {
@@ -152,6 +155,7 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	}
 	defer file.Close()
 
+	r.updateProgress(jobID, "uploading", info.Size(), 80)
 	err = storage.UploadWithRetry(connStorage, storagePath, file, info.Size(), 3)
 	if err != nil {
 		r.failJob(jobID, "Failed to upload backup: "+err.Error())
@@ -167,7 +171,7 @@ func (r *Runner) RunBackup(conn models.DBConnection, scheduleID *int) {
 	// Mark success
 	completed := time.Now()
 	_, err = r.DB.Exec(
-		"UPDATE backup_jobs SET status = 'success', size_bytes = $1, storage_path = $2, completed_at = $3, encrypted = $4 WHERE id = $5",
+		"UPDATE backup_jobs SET status = 'success', size_bytes = $1, storage_path = $2, completed_at = $3, encrypted = $4, progress_stage = 'completed', progress_bytes = $1, progress_percent = 100 WHERE id = $5",
 		info.Size(), storagePath, completed, isEncrypted, jobID,
 	)
 	if err != nil {
@@ -449,11 +453,17 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 }
 
 func (r *Runner) failJob(jobID int, errMsg string) {
-	log.Printf("Backup failed: job=%d error=%s", jobID, errMsg)
-	now := time.Now()
+	completed := time.Now()
 	r.DB.Exec(
-		"UPDATE backup_jobs SET status = 'failed', error_message = $1, completed_at = $2 WHERE id = $3",
-		errMsg, now, jobID,
+		"UPDATE backup_jobs SET status = 'failed', error_message = $1, completed_at = $2, progress_stage = 'failed' WHERE id = $3",
+		errMsg, completed, jobID,
+	)
+}
+
+func (r *Runner) updateProgress(jobID int, stage string, bytes int64, percent int) {
+	r.DB.Exec(
+		"UPDATE backup_jobs SET progress_stage = $1, progress_bytes = $2, progress_percent = $3 WHERE id = $4",
+		stage, bytes, percent, jobID,
 	)
 }
 
