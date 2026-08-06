@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -336,6 +337,13 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 
 	gzWriter := gzip.NewWriter(tmpFile)
 
+	password := conn.PasswordEncrypted
+	if conn.PasswordEncrypted != "" {
+		if plain, err := crypto.Decrypt(conn.PasswordEncrypted); err == nil {
+			password = plain
+		}
+	}
+
 	var cmd *exec.Cmd
 	switch conn.Type {
 	case "postgres":
@@ -346,10 +354,10 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 			"-d", conn.Database,
 			"--no-password",
 		)
-		cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", conn.PasswordEncrypted))
+		cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", password))
 
 	case "mysql":
-		credsFile, cleanupCreds, credErr := mysqlDefaultsFile(conn.PasswordEncrypted)
+		credsFile, cleanupCreds, credErr := mysqlDefaultsFile(password)
 		if credErr != nil {
 			tmpFile.Close()
 			os.Remove(tmpPath)
@@ -369,14 +377,17 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		if conn.AuthSource != "" {
 			authSource = conn.AuthSource
 		}
+		escapedUser := url.QueryEscape(conn.Username)
+		escapedPass := url.QueryEscape(password)
+
 		var uri string
 		// MongoDB Atlas uses SRV records (.mongodb.net) — must use mongodb+srv:// without port
 		if strings.Contains(conn.Host, ".mongodb.net") {
 			uri = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=%s",
-				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Database, authSource)
+				escapedUser, escapedPass, conn.Host, conn.Database, authSource)
 		} else {
 			uri = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-				conn.Username, conn.PasswordEncrypted, conn.Host, conn.Port, conn.Database, authSource)
+				escapedUser, escapedPass, conn.Host, conn.Port, conn.Database, authSource)
 		}
 		cmd = exec.Command("mongodump",
 			"--uri", uri,
