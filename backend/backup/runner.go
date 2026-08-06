@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -392,22 +391,31 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 			host = host[:idx]
 		}
 
-		escapedUser := url.QueryEscape(conn.Username)
-		escapedPass := url.QueryEscape(password)
-
-		var uri string
-		// MongoDB Atlas uses SRV records (.mongodb.net) — must use mongodb+srv:// without port
+		args := []string{}
 		if strings.Contains(host, ".mongodb.net") {
-			uri = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=%s",
-				escapedUser, escapedPass, host, conn.Database, authSource)
+			args = append(args, "--host", "mongodb+srv://"+host)
 		} else {
-			uri = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-				escapedUser, escapedPass, host, conn.Port, conn.Database, authSource)
+			args = append(args, "--host", host)
+			if conn.Port > 0 {
+				args = append(args, "--port", fmt.Sprintf("%d", conn.Port))
+			}
 		}
-		cmd = exec.Command("mongodump",
-			"--uri", uri,
-			"--archive",
-		)
+
+		if conn.Username != "" {
+			args = append(args, "--username", conn.Username)
+		}
+		if password != "" {
+			args = append(args, "--password", password)
+		}
+		if conn.Database != "" {
+			args = append(args, "--db", conn.Database)
+		}
+		if authSource != "" {
+			args = append(args, "--authenticationDatabase", authSource)
+		}
+		args = append(args, "--archive")
+
+		cmd = exec.Command("mongodump", args...)
 
 	case "sqlite":
 		srcFile, err := os.Open(conn.Database)

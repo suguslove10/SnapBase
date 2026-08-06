@@ -207,19 +207,48 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	case "mongodb":
 		send("log", fmt.Sprintf("Restoring MongoDB database %s...", dbName))
-		var mongoURI string
-		if strings.Contains(host, ".mongodb.net") {
-			mongoURI = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=%s", username, passwordEnc, host, dbName, authSource)
-		} else {
-			mongoURI = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s", username, passwordEnc, host, port, dbName, authSource)
+		cleanHost := host
+		cleanHost = strings.TrimPrefix(cleanHost, "mongodb+srv://")
+		cleanHost = strings.TrimPrefix(cleanHost, "mongodb://")
+		if idx := strings.Index(cleanHost, "/"); idx != -1 {
+			cleanHost = cleanHost[:idx]
 		}
-		cmd = exec.Command("mongorestore",
-			"--uri", mongoURI,
-			"--db", dbName,
-			"--drop",
-			"--archive="+tmpGz,
-			"--gzip",
-		)
+		if idx := strings.Index(cleanHost, "?"); idx != -1 {
+			cleanHost = cleanHost[:idx]
+		}
+
+		plainPass := passwordEnc
+		if passwordEnc != "" {
+			if p, err := crypto.Decrypt(passwordEnc); err == nil {
+				plainPass = p
+			}
+		}
+
+		rArgs := []string{}
+		if strings.Contains(cleanHost, ".mongodb.net") {
+			rArgs = append(rArgs, "--host", "mongodb+srv://"+cleanHost)
+		} else {
+			rArgs = append(rArgs, "--host", cleanHost)
+			if port > 0 {
+				rArgs = append(rArgs, "--port", fmt.Sprintf("%d", port))
+			}
+		}
+
+		if username != "" {
+			rArgs = append(rArgs, "--username", username)
+		}
+		if plainPass != "" {
+			rArgs = append(rArgs, "--password", plainPass)
+		}
+		if dbName != "" {
+			rArgs = append(rArgs, "--db", dbName)
+		}
+		if authSource != "" {
+			rArgs = append(rArgs, "--authenticationDatabase", authSource)
+		}
+		rArgs = append(rArgs, "--drop", "--archive="+tmpGz, "--gzip")
+
+		cmd = exec.Command("mongorestore", rArgs...)
 
 	case "sqlite":
 		send("log", fmt.Sprintf("Restoring SQLite database %s...", dbName))
