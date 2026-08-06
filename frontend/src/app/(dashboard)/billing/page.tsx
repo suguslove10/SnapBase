@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { CreditCard, Zap, Check, Star, Receipt, AlertTriangle, Sparkles, HardDrive, X } from "lucide-react";
+import { toast } from "sonner";
 import api from "@/lib/api";
 
 interface Subscription {
@@ -134,7 +135,7 @@ export default function BillingPage() {
       }
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      alert(error.response?.data?.error || "Stripe checkout failed");
+      toast.error(error.response?.data?.error || "Stripe checkout failed");
     }
   };
 
@@ -146,7 +147,7 @@ export default function BillingPage() {
       }
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      alert(error.response?.data?.error || "Failed to open Stripe portal");
+      toast.error(error.response?.data?.error || "Stripe integration is not configured");
     }
   };
 
@@ -167,7 +168,7 @@ export default function BillingPage() {
       link.click();
       setShowSOC2Modal(false);
     } catch {
-      alert("Failed to generate SOC2 Compliance Audit Package");
+      toast.error("Failed to generate SOC2 Compliance Audit Package");
     } finally {
       setExportingSOC2(false);
     }
