@@ -462,9 +462,10 @@ func buildMongoURI(conn models.DBConnection, password string) string {
 
 	if strings.Contains(s, ".mongodb.net") {
 		clusterHost := s
-		parts := strings.Split(s, ".")
-		if len(parts) >= 3 {
-			clusterHost = strings.Join(parts[len(parts)-3:], ".")
+		if strings.Contains(s, "-shard-") {
+			if idx := strings.Index(s, "."); idx != -1 {
+				clusterHost = s[idx+1:]
+			}
 		}
 		return fmt.Sprintf("mongodb+srv://%s:%s@%s/%s", escapedUser, escapedPass, clusterHost, dbName)
 	}

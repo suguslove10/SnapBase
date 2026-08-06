@@ -14,17 +14,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    postgresql-client \
-    default-mysql-client \
-    sqlite3 \
     curl \
     gnupg \
-    && curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
-       | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor \
-    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
-       | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    lsb-release \
+    default-mysql-client \
+    sqlite3 \
+    && echo "deb http://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg \
+    && curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor \
+    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends mongodb-database-tools \
+    && apt-get install -y --no-install-recommends postgresql-client-17 mongodb-database-tools \
     && apt-get purge -y curl gnupg \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
