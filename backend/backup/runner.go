@@ -377,17 +377,28 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		if conn.AuthSource != "" {
 			authSource = conn.AuthSource
 		}
+		// Clean host: strip scheme or paths if user pasted full mongodb:// or mongodb+srv:// URL
+		host := conn.Host
+		host = strings.TrimPrefix(host, "mongodb+srv://")
+		host = strings.TrimPrefix(host, "mongodb://")
+		if idx := strings.Index(host, "/"); idx != -1 {
+			host = host[:idx]
+		}
+		if idx := strings.Index(host, "?"); idx != -1 {
+			host = host[:idx]
+		}
+
 		escapedUser := url.QueryEscape(conn.Username)
 		escapedPass := url.QueryEscape(password)
 
 		var uri string
 		// MongoDB Atlas uses SRV records (.mongodb.net) — must use mongodb+srv:// without port
-		if strings.Contains(conn.Host, ".mongodb.net") {
+		if strings.Contains(host, ".mongodb.net") {
 			uri = fmt.Sprintf("mongodb+srv://%s:%s@%s/%s?authSource=%s",
-				escapedUser, escapedPass, conn.Host, conn.Database, authSource)
+				escapedUser, escapedPass, host, conn.Database, authSource)
 		} else {
 			uri = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-				escapedUser, escapedPass, conn.Host, conn.Port, conn.Database, authSource)
+				escapedUser, escapedPass, host, conn.Port, conn.Database, authSource)
 		}
 		cmd = exec.Command("mongodump",
 			"--uri", uri,

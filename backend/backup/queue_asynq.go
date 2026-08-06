@@ -107,12 +107,12 @@ func (w *AsynqWorker) handleBackupTask(ctx context.Context, t *asynq.Task) error
 
 	var conn models.DBConnection
 	err := w.runner.DB.QueryRow(
-		"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(password_encrypted, ''), retention_days, storage_provider_id, COALESCE(encryption_enabled, false), COALESCE(encryption_key_encrypted, '') FROM db_connections WHERE id = $1",
+		"SELECT id, user_id, name, type, host, port, database_name, username, COALESCE(password_encrypted, ''), retention_days, storage_provider_id, COALESCE(encryption_enabled, false), COALESCE(encryption_key_encrypted, ''), COALESCE(auth_source, '') FROM db_connections WHERE id = $1",
 		payload.ConnectionID,
 	).Scan(
 		&conn.ID, &conn.UserID, &conn.Name, &conn.Type, &conn.Host, &conn.Port,
 		&conn.Database, &conn.Username, &conn.PasswordEncrypted, &conn.RetentionDays,
-		&conn.StorageProviderID, &conn.EncryptionEnabled, &conn.EncryptionKeyEncrypted,
+		&conn.StorageProviderID, &conn.EncryptionEnabled, &conn.EncryptionKeyEncrypted, &conn.AuthSource,
 	)
 	if err != nil {
 		return fmt.Errorf("connection %d not found: %w", payload.ConnectionID, err)
