@@ -136,9 +136,9 @@ To scale SnapBase into a **$10M+ ARR business**, it must evolve from a simple "c
 - [x] Write worker pool scaling configuration in `docker-compose.yml`.
 
 ### Days 31–60: Enterprise Security & Compliance
-- [ ] Implement PII Data Masking transformer in `backend/sync/runner.go`.
-- [ ] Add S3 Object Lock (WORM) support to `backend/storage/minio.go`.
-- [ ] Build 1-Click SOC2 Audit PDF Exporter.
+- [x] Implement PII Data Masking transformer in `backend/sync/runner.go`.
+- [x] Add S3 Object Lock (WORM) support to `backend/storage/minio.go`.
+- [x] Build 1-Click SOC2 Audit PDF Exporter.
 
 ### Days 61–90: Growth & Ecosystem Expansion
 - [ ] Apply for AWS Cloud Marketplace listing.

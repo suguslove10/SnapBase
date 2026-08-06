@@ -58,6 +58,20 @@ func (s *MinioStorage) Upload(path string, reader io.Reader, size int64) error {
 	return err
 }
 
+func (s *MinioStorage) UploadWithRetention(path string, reader io.Reader, size int64, retainUntil time.Time) error {
+	if s.client == nil {
+		return fmt.Errorf("storage not available: check MINIO_ENDPOINT configuration")
+	}
+	ctx := context.Background()
+	opts := minio.PutObjectOptions{
+		ContentType:     "application/gzip",
+		Mode:            minio.Compliance,
+		RetainUntilDate: retainUntil,
+	}
+	_, err := s.client.PutObject(ctx, s.bucket, path, reader, size, opts)
+	return err
+}
+
 func (s *MinioStorage) GetPresignedURL(path string) (string, error) {
 	if s.client == nil {
 		return "", fmt.Errorf("storage not available: check MINIO_ENDPOINT configuration")

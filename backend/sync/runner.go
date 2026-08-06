@@ -180,8 +180,17 @@ func (r *Runner) RunSync(syncJobID int) {
 			fail(fmt.Sprintf("failed to decompress backup: %v", err))
 			return
 		}
-		outFile, _ := os.Create(tmpSQL)
-		io.Copy(outFile, gz)
+		outFile, err := os.Create(tmpSQL)
+		if err != nil {
+			gz.Close()
+			gzFile.Close()
+			fail(fmt.Sprintf("failed to create decompressed file: %v", err))
+			return
+		}
+		masker := NewPIIMasker()
+		if err := masker.MaskDumpStream(gz, outFile); err != nil {
+			log.Printf("sync[%d]: warning during PII masking: %v", syncJobID, err)
+		}
 		gz.Close()
 		gzFile.Close()
 		outFile.Close()

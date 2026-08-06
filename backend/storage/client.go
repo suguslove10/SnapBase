@@ -14,6 +14,7 @@ import (
 // StorageClient is the interface all storage backends implement.
 type StorageClient interface {
 	Upload(path string, reader io.Reader, size int64) error
+	UploadWithRetention(path string, reader io.Reader, size int64, retainUntil time.Time) error
 	GetPresignedURL(path string) (string, error)
 	GetObject(path string) (*minio.Object, error)
 	Delete(path string) error
@@ -111,6 +112,17 @@ func (s *s3Storage) Upload(path string, reader io.Reader, size int64) error {
 	_, err := s.client.PutObject(ctx, s.bucket, path, reader, size, minio.PutObjectOptions{
 		ContentType: "application/gzip",
 	})
+	return err
+}
+
+func (s *s3Storage) UploadWithRetention(path string, reader io.Reader, size int64, retainUntil time.Time) error {
+	ctx := context.Background()
+	opts := minio.PutObjectOptions{
+		ContentType:     "application/gzip",
+		Mode:            minio.Compliance,
+		RetainUntilDate: retainUntil,
+	}
+	_, err := s.client.PutObject(ctx, s.bucket, path, reader, size, opts)
 	return err
 }
 
