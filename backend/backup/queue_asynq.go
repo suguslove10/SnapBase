@@ -34,8 +34,16 @@ type AsynqQueueClient struct {
 	client *asynq.Client
 }
 
+func parseRedisConnOpt(redisAddr string) asynq.RedisConnOpt {
+	opt, err := asynq.ParseRedisURI(redisAddr)
+	if err == nil {
+		return opt
+	}
+	return asynq.RedisClientOpt{Addr: redisAddr}
+}
+
 func NewAsynqQueueClient(redisAddr string) *AsynqQueueClient {
-	client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+	client := asynq.NewClient(parseRedisConnOpt(redisAddr))
 	return &AsynqQueueClient{client: client}
 }
 
@@ -65,7 +73,7 @@ type AsynqWorker struct {
 
 func NewAsynqWorker(redisAddr string, concurrency int, runner *Runner) *AsynqWorker {
 	srv := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisAddr},
+		parseRedisConnOpt(redisAddr),
 		asynq.Config{
 			Concurrency: concurrency,
 			Queues: map[string]int{
