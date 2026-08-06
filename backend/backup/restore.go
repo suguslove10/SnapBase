@@ -14,6 +14,7 @@ import (
 
 	"github.com/suguslove10/snapbase/config"
 	"github.com/suguslove10/snapbase/crypto"
+	"github.com/suguslove10/snapbase/models"
 	"github.com/suguslove10/snapbase/storage"
 )
 
@@ -206,40 +207,26 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	case "mongodb":
 		send("log", fmt.Sprintf("Restoring MongoDB database %s...", dbName))
-		cleanHost, cleanPort, isSRV := parseMongoHost(host, port)
-
 		plainPass := passwordEnc
 		if passwordEnc != "" {
 			if p, err := crypto.Decrypt(passwordEnc); err == nil {
 				plainPass = p
 			}
 		}
-
-		rArgs := []string{}
-		if isSRV {
-			rArgs = append(rArgs, "--host", "mongodb+srv://"+cleanHost)
-		} else {
-			rArgs = append(rArgs, "--host", cleanHost)
-			if cleanPort > 0 {
-				rArgs = append(rArgs, "--port", fmt.Sprintf("%d", cleanPort))
-			}
+		dummyConn := models.DBConnection{
+			Host:       host,
+			Port:       port,
+			Database:   dbName,
+			Username:   username,
+			AuthSource: authSource,
 		}
-
-		if username != "" {
-			rArgs = append(rArgs, "--username", username)
-		}
-		if plainPass != "" {
-			rArgs = append(rArgs, "--password", plainPass)
-		}
-		if dbName != "" {
-			rArgs = append(rArgs, "--db", dbName)
-		}
-		if authSource != "" {
-			rArgs = append(rArgs, "--authenticationDatabase", authSource)
-		}
-		rArgs = append(rArgs, "--drop", "--archive="+tmpGz, "--gzip")
-
-		cmd = exec.Command("mongorestore", rArgs...)
+		mongoURI := buildMongoURI(dummyConn, plainPass)
+		cmd = exec.Command("mongorestore",
+			"--uri", mongoURI,
+			"--drop",
+			"--archive="+tmpGz,
+			"--gzip",
+		)
 
 	case "sqlite":
 		send("log", fmt.Sprintf("Restoring SQLite database %s...", dbName))

@@ -10,9 +10,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -377,37 +377,8 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		)
 
 	case "mongodb":
-		authSource := "admin"
-		if conn.AuthSource != "" {
-			authSource = conn.AuthSource
-		}
-		cleanHost, port, isSRV := parseMongoHost(conn.Host, conn.Port)
-
-		args := []string{}
-		if isSRV {
-			args = append(args, "--host", "mongodb+srv://"+cleanHost)
-		} else {
-			args = append(args, "--host", cleanHost)
-			if port > 0 {
-				args = append(args, "--port", fmt.Sprintf("%d", port))
-			}
-		}
-
-		if conn.Username != "" {
-			args = append(args, "--username", conn.Username)
-		}
-		if password != "" {
-			args = append(args, "--password", password)
-		}
-		if conn.Database != "" {
-			args = append(args, "--db", conn.Database)
-		}
-		if authSource != "" {
-			args = append(args, "--authenticationDatabase", authSource)
-		}
-		args = append(args, "--archive")
-
-		cmd = exec.Command("mongodump", args...)
+		mongoURI := buildMongoURI(conn, password)
+		cmd = exec.Command("mongodump", "--uri", mongoURI, "--archive")
 
 	case "sqlite":
 		srcFile, err := os.Open(conn.Database)
@@ -466,7 +437,8 @@ func (r *Runner) updateProgress(jobID int, stage string, bytes int64, percent in
 	)
 }
 
-func parseMongoHost(rawHost string, connPort int) (cleanHost string, port int, isSRV bool) {
+func buildMongoURI(conn models.DBConnection, password string) string {
+	rawHost := conn.Host
 	s := rawHost
 	s = strings.TrimPrefix(s, "mongodb+srv://")
 	s = strings.TrimPrefix(s, "mongodb://")
@@ -480,26 +452,32 @@ func parseMongoHost(rawHost string, connPort int) (cleanHost string, port int, i
 	if idx := strings.Index(s, "?"); idx != -1 {
 		s = s[:idx]
 	}
-
-	port = connPort
 	if idx := strings.Index(s, ":"); idx != -1 {
-		hostPart := s[:idx]
-		portPart := s[idx+1:]
-		if p, err := strconv.Atoi(portPart); err == nil && p > 0 {
-			port = p
-			s = hostPart
+		s = s[:idx]
+	}
+
+	escapedUser := url.QueryEscape(conn.Username)
+	escapedPass := url.QueryEscape(password)
+	dbName := conn.Database
+
+	if strings.Contains(s, ".mongodb.net") {
+		clusterHost := s
+		parts := strings.Split(s, ".")
+		if len(parts) >= 3 {
+			clusterHost = strings.Join(parts[len(parts)-3:], ".")
 		}
+		return fmt.Sprintf("mongodb+srv://%s:%s@%s/%s", escapedUser, escapedPass, clusterHost, dbName)
 	}
 
-	cleanHost = s
-	if strings.Contains(cleanHost, ".mongodb.net") && !strings.Contains(cleanHost, "-shard-") && (port == 0 || port == 27017) {
-		return cleanHost, 0, true
-	}
-
+	port := conn.Port
 	if port == 0 {
 		port = 27017
 	}
-	return cleanHost, port, false
+	authSource := "admin"
+	if conn.AuthSource != "" {
+		authSource = conn.AuthSource
+	}
+	return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s", escapedUser, escapedPass, s, port, dbName, authSource)
 }
 
 func resolveStorage(db *sql.DB, cfg *config.Config, connID int, userID int) (storage.StorageClient, error) {
