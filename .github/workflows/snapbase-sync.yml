@@ -1,0 +1,31 @@
+name: SnapBase DB Branching & Sync CI/CD
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+
+jobs:
+  db-branching:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Provision Ephemeral DB Branch on PR Open
+        if: github.event.action == 'opened' || github.event.action == 'synchronize'
+        run: |
+          echo "Triggering SnapBase DB Branching for PR #${{ github.event.pull_request.number }}..."
+          curl -X POST "${{ secrets.SNAPBASE_API_URL }}/api/branching/create" \
+            -H "Authorization: Bearer ${{ secrets.SNAPBASE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "connection_id": ${{ secrets.SNAPBASE_SOURCE_CONN_ID }},
+              "branch_name": "pr-${{ github.event.pull_request.number }}"
+            }'
+
+      - name: Teardown DB Branch on PR Close
+        if: github.event.action == 'closed'
+        run: |
+          echo "Tearing down SnapBase DB Branch for PR #${{ github.event.pull_request.number }}..."
+          curl -X DELETE "${{ secrets.SNAPBASE_API_URL }}/api/branching/pr-${{ github.event.pull_request.number }}" \
+            -H "Authorization: Bearer ${{ secrets.SNAPBASE_API_TOKEN }}"

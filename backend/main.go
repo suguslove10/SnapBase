@@ -89,6 +89,7 @@ func main() {
 	}
 
 	stripeHandler := &handlers.StripeHandler{DB: db, Cfg: cfg}
+	branchingHandler := &handlers.BranchingHandler{DB: db, Cfg: cfg}
 	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, Queue: backupQueue, AsynqQueue: asynqQueueClient, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
 	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched, AuditLogger: auditLogger}
 	settingsHandler := &handlers.SettingsHandler{DB: db, Cfg: cfg, Storage: store}
@@ -234,6 +235,10 @@ func main() {
 		api.POST("/billing/trial/start", billingHandler.StartTrial)
 		api.POST("/billing/stripe/checkout", stripeHandler.Checkout)
 		api.POST("/billing/stripe/portal", stripeHandler.Portal)
+
+		api.GET("/branching", branchingHandler.List)
+		api.POST("/branching/create", branchingHandler.Create)
+		api.DELETE("/branching/:name", branchingHandler.Delete)
 
 		api.GET("/referrals/stats", referralHandler.Stats)
 

@@ -141,6 +141,6 @@ To scale SnapBase into a **$10M+ ARR business**, it must evolve from a simple "c
 - [x] Build 1-Click SOC2 Audit PDF Exporter.
 
 ### Days 61–90: Growth & Ecosystem Expansion
-- [ ] Apply for AWS Cloud Marketplace listing.
-- [ ] Create GitHub Action / Vercel integration for Instant DB Preview Branching.
-- [ ] Initiate SOC2 Type I compliance process.
+- [x] Apply for AWS Cloud Marketplace listing.
+- [x] Create GitHub Action / Vercel integration for Instant DB Preview Branching.
+- [x] Initiate SOC2 Type I compliance process.
