@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -380,24 +381,15 @@ func (r *Runner) executeBackup(conn models.DBConnection) (string, error) {
 		if conn.AuthSource != "" {
 			authSource = conn.AuthSource
 		}
-		// Clean host: strip scheme or paths if user pasted full mongodb:// or mongodb+srv:// URL
-		host := conn.Host
-		host = strings.TrimPrefix(host, "mongodb+srv://")
-		host = strings.TrimPrefix(host, "mongodb://")
-		if idx := strings.Index(host, "/"); idx != -1 {
-			host = host[:idx]
-		}
-		if idx := strings.Index(host, "?"); idx != -1 {
-			host = host[:idx]
-		}
+		cleanHost, port, isSRV := parseMongoHost(conn.Host, conn.Port)
 
 		args := []string{}
-		if strings.Contains(host, ".mongodb.net") {
-			args = append(args, "--host", "mongodb+srv://"+host)
+		if isSRV {
+			args = append(args, "--host", "mongodb+srv://"+cleanHost)
 		} else {
-			args = append(args, "--host", host)
-			if conn.Port > 0 {
-				args = append(args, "--port", fmt.Sprintf("%d", conn.Port))
+			args = append(args, "--host", cleanHost)
+			if port > 0 {
+				args = append(args, "--port", fmt.Sprintf("%d", port))
 			}
 		}
 
@@ -467,12 +459,47 @@ func (r *Runner) failJob(jobID int, errMsg string) {
 		errMsg, completed, jobID,
 	)
 }
-
 func (r *Runner) updateProgress(jobID int, stage string, bytes int64, percent int) {
 	r.DB.Exec(
 		"UPDATE backup_jobs SET progress_stage = $1, progress_bytes = $2, progress_percent = $3 WHERE id = $4",
 		stage, bytes, percent, jobID,
 	)
+}
+
+func parseMongoHost(rawHost string, connPort int) (cleanHost string, port int, isSRV bool) {
+	s := rawHost
+	s = strings.TrimPrefix(s, "mongodb+srv://")
+	s = strings.TrimPrefix(s, "mongodb://")
+
+	if idx := strings.Index(s, "@"); idx != -1 {
+		s = s[idx+1:]
+	}
+	if idx := strings.Index(s, "/"); idx != -1 {
+		s = s[:idx]
+	}
+	if idx := strings.Index(s, "?"); idx != -1 {
+		s = s[:idx]
+	}
+
+	port = connPort
+	if idx := strings.Index(s, ":"); idx != -1 {
+		hostPart := s[:idx]
+		portPart := s[idx+1:]
+		if p, err := strconv.Atoi(portPart); err == nil && p > 0 {
+			port = p
+			s = hostPart
+		}
+	}
+
+	cleanHost = s
+	if strings.Contains(cleanHost, ".mongodb.net") && !strings.Contains(cleanHost, "-shard-") && (port == 0 || port == 27017) {
+		return cleanHost, 0, true
+	}
+
+	if port == 0 {
+		port = 27017
+	}
+	return cleanHost, port, false
 }
 
 func resolveStorage(db *sql.DB, cfg *config.Config, connID int, userID int) (storage.StorageClient, error) {

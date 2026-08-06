@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/suguslove10/snapbase/config"
@@ -207,15 +206,7 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 
 	case "mongodb":
 		send("log", fmt.Sprintf("Restoring MongoDB database %s...", dbName))
-		cleanHost := host
-		cleanHost = strings.TrimPrefix(cleanHost, "mongodb+srv://")
-		cleanHost = strings.TrimPrefix(cleanHost, "mongodb://")
-		if idx := strings.Index(cleanHost, "/"); idx != -1 {
-			cleanHost = cleanHost[:idx]
-		}
-		if idx := strings.Index(cleanHost, "?"); idx != -1 {
-			cleanHost = cleanHost[:idx]
-		}
+		cleanHost, cleanPort, isSRV := parseMongoHost(host, port)
 
 		plainPass := passwordEnc
 		if passwordEnc != "" {
@@ -225,12 +216,12 @@ func (r *RestoreRunner) Restore(backupID int, userID int, events chan<- RestoreE
 		}
 
 		rArgs := []string{}
-		if strings.Contains(cleanHost, ".mongodb.net") {
+		if isSRV {
 			rArgs = append(rArgs, "--host", "mongodb+srv://"+cleanHost)
 		} else {
 			rArgs = append(rArgs, "--host", cleanHost)
-			if port > 0 {
-				rArgs = append(rArgs, "--port", fmt.Sprintf("%d", port))
+			if cleanPort > 0 {
+				rArgs = append(rArgs, "--port", fmt.Sprintf("%d", cleanPort))
 			}
 		}
 
