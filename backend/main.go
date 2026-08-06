@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -73,7 +74,22 @@ func main() {
 	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, AuditLogger: auditLogger, EmailConfig: emailCfg}
 	connHandler := &handlers.ConnectionHandler{DB: db, AuditLogger: auditLogger}
 	restoreRunner := &backup.RestoreRunner{DB: db, Storage: store, Cfg: cfg}
-	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, Queue: backupQueue, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
+	// Optional Asynq Redis Task Queue & Worker
+	var asynqQueueClient *backup.AsynqQueueClient
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr != "" {
+		log.Printf("[asynq] connecting to Redis at %s", redisAddr)
+		asynqQueueClient = backup.NewAsynqQueueClient(redisAddr)
+		asynqWorker := backup.NewAsynqWorker(redisAddr, 5, runner)
+		go func() {
+			if err := asynqWorker.Start(); err != nil {
+				log.Printf("[asynq] worker server error: %v", err)
+			}
+		}()
+	}
+
+	stripeHandler := &handlers.StripeHandler{DB: db, Cfg: cfg}
+	backupHandler := &handlers.BackupHandler{DB: db, Storage: store, Cfg: cfg, Runner: runner, Queue: backupQueue, AsynqQueue: asynqQueueClient, RestoreRunner: restoreRunner, AuditLogger: auditLogger}
 	schedHandler := &handlers.ScheduleHandler{DB: db, Scheduler: sched, AuditLogger: auditLogger}
 	settingsHandler := &handlers.SettingsHandler{DB: db, Cfg: cfg, Storage: store}
 	anomalyHandler := &handlers.AnomalyHandler{DB: db}
@@ -121,6 +137,7 @@ func main() {
 
 	// Public routes
 	r.POST("/api/billing/webhook", billingHandler.Webhook)
+	r.POST("/api/billing/stripe/webhook", stripeHandler.Webhook)
 	r.GET("/api/status", statusHandler.Status)
 	r.GET("/api/cli/auth/init", cliAuthHandler.Init)
 	r.GET("/api/cli/auth/poll/:token", cliAuthHandler.Poll)
@@ -215,6 +232,8 @@ func main() {
 		api.POST("/billing/resume", billingHandler.ResumeSubscription)
 		api.GET("/billing/invoices", billingHandler.ListInvoices)
 		api.POST("/billing/trial/start", billingHandler.StartTrial)
+		api.POST("/billing/stripe/checkout", stripeHandler.Checkout)
+		api.POST("/billing/stripe/portal", stripeHandler.Portal)
 
 		api.GET("/referrals/stats", referralHandler.Stats)
 

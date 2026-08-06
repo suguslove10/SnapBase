@@ -131,9 +131,9 @@ To scale SnapBase into a **$10M+ ARR business**, it must evolve from a simple "c
 ## 🚀 9. 90-Day Implementation Action Plan
 
 ### Days 1–30: Core Scaling & Global Billing
-- [ ] Refactor `backend/backup/runner.go` to use [Asynq](https://github.com/hibiken/asynq) background task queue.
-- [ ] Add Stripe Billing integration ($29, $79, $299 USD tiers).
-- [ ] Write worker pool scaling configuration in `docker-compose.yml`.
+- [x] Refactor `backend/backup/runner.go` to use [Asynq](https://github.com/hibiken/asynq) background task queue.
+- [x] Add Stripe Billing integration ($29, $79, $299 USD tiers).
+- [x] Write worker pool scaling configuration in `docker-compose.yml`.
 
 ### Days 31–60: Enterprise Security & Compliance
 - [ ] Implement PII Data Masking transformer in `backend/sync/runner.go`.

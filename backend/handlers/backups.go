@@ -24,6 +24,7 @@ type BackupHandler struct {
 	Cfg           *config.Config
 	Runner        *backup.Runner
 	Queue         *backup.Queue
+	AsynqQueue    *backup.AsynqQueueClient
 	RestoreRunner *backup.RestoreRunner
 	AuditLogger   interface{ LogAction(int, string, string, int, map[string]interface{}, string) }
 }
@@ -169,7 +170,12 @@ func (h *BackupHandler) Trigger(c *gin.Context) {
 		return
 	}
 
-	if h.Queue != nil {
+	if h.AsynqQueue != nil {
+		if err := h.AsynqQueue.EnqueueBackup(conn.ID, nil); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enqueue backup task"})
+			return
+		}
+	} else if h.Queue != nil {
 		if !h.Queue.Enqueue(conn, nil) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Backup queue is full. Please try again shortly."})
 			return
