@@ -78,7 +78,7 @@ export default function BranchingPage() {
   const handleDeleteBranch = async (name: string) => {
     if (!confirm(`Are you sure you want to tear down preview branch "${name}"?`)) return;
     try {
-      await api.delete(`/branching/${name}`);
+      await api.delete(`/branching/${encodeURIComponent(name)}`);
       fetchData();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };

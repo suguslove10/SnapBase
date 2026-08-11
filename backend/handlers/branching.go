@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -174,6 +175,11 @@ func (h *BranchingHandler) List(c *gin.Context) {
 func (h *BranchingHandler) Delete(c *gin.Context) {
 	userID := c.GetInt("user_id")
 	branchName := c.Param("name")
+	branchName = strings.TrimPrefix(branchName, "/")
+	if unescaped, err := url.QueryUnescape(branchName); err == nil {
+		branchName = unescaped
+	}
+
 	if branchName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Branch name is required"})
 		return
@@ -183,12 +189,12 @@ func (h *BranchingHandler) Delete(c *gin.Context) {
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		_, err = h.DB.Exec(`
 			DELETE FROM db_connections 
-			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND (name = $3 OR name = 'preview-branch_' || $3 OR name LIKE '%_branch_' || $3)
+			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND (name = $3 OR name = 'preview-branch_' || $3 OR name LIKE '%' || $3)
 		`, orgIDRaw, userID, branchName)
 	} else {
 		_, err = h.DB.Exec(`
 			DELETE FROM db_connections 
-			WHERE user_id = $1 AND (name = $2 OR name = 'preview-branch_' || $2 OR name LIKE '%_branch_' || $2)
+			WHERE user_id = $1 AND (name = $2 OR name = 'preview-branch_' || $2 OR name LIKE '%' || $2)
 		`, userID, branchName)
 	}
 

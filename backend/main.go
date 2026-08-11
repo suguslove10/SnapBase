@@ -238,7 +238,7 @@ func main() {
 
 		api.GET("/branching", branchingHandler.List)
 		api.POST("/branching/create", branchingHandler.Create)
-		api.DELETE("/branching/:name", branchingHandler.Delete)
+		api.DELETE("/branching/*name", branchingHandler.Delete)
 
 		api.GET("/referrals/stats", referralHandler.Stats)
 
