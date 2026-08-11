@@ -70,7 +70,7 @@ func (h *BranchingHandler) Create(c *gin.Context) {
 		ORDER BY completed_at DESC LIMIT 1
 	`, req.ConnectionID).Scan(&backupID)
 
-	branchConnName := fmt.Sprintf("%s_branch_%s", connName, req.BranchName)
+	branchConnName := fmt.Sprintf("preview-branch_%s", req.BranchName)
 	branchDBName := fmt.Sprintf("%s_branch_%s", databaseName, req.BranchName)
 	previewURL := fmt.Sprintf("%s://%s:%d/%s?sslmode=disable", connType, host, port, branchDBName)
 	expiresAt := time.Now().Add(24 * time.Hour) // 24-hour default PR preview lifetime
@@ -79,14 +79,14 @@ func (h *BranchingHandler) Create(c *gin.Context) {
 	var newID int
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		err = h.DB.QueryRow(`
-			INSERT INTO db_connections (user_id, org_id, name, type, host, port, database_name, username, password_encrypted, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+			INSERT INTO db_connections (user_id, org_id, name, type, host, port, database_name, username, password_encrypted, auth_source, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'preview_branch', NOW())
 			RETURNING id
 		`, userID, orgIDRaw, branchConnName, connType, host, port, branchDBName, username, passwordEnc).Scan(&newID)
 	} else {
 		err = h.DB.QueryRow(`
-			INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+			INSERT INTO db_connections (user_id, name, type, host, port, database_name, username, password_encrypted, auth_source, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'preview_branch', NOW())
 			RETURNING id
 		`, userID, branchConnName, connType, host, port, branchDBName, username, passwordEnc).Scan(&newID)
 	}
@@ -129,14 +129,14 @@ func (h *BranchingHandler) List(c *gin.Context) {
 		rows, err = h.DB.Query(`
 			SELECT id, user_id, name, type, created_at
 			FROM db_connections 
-			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND name LIKE '%_branch_%'
+			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND (auth_source = 'preview_branch' OR name LIKE 'preview-branch_%')
 			ORDER BY created_at DESC
 		`, orgIDRaw, userID)
 	} else {
 		rows, err = h.DB.Query(`
 			SELECT id, user_id, name, type, created_at
 			FROM db_connections 
-			WHERE user_id = $1 AND name LIKE '%_branch_%'
+			WHERE user_id = $1 AND (auth_source = 'preview_branch' OR name LIKE 'preview-branch_%')
 			ORDER BY created_at DESC
 		`, userID)
 	}
@@ -149,7 +149,9 @@ func (h *BranchingHandler) List(c *gin.Context) {
 			if scanErr := rows.Scan(&item.ID, &rowUserID, &item.Name, &item.Type, &item.CreatedAt); scanErr != nil {
 				continue
 			}
-			if idx := strings.LastIndex(item.Name, "_branch_"); idx != -1 {
+			if strings.HasPrefix(item.Name, "preview-branch_") {
+				item.BranchName = strings.TrimPrefix(item.Name, "preview-branch_")
+			} else if idx := strings.LastIndex(item.Name, "_branch_"); idx != -1 {
 				item.BranchName = item.Name[idx+len("_branch_"):]
 			} else {
 				item.BranchName = item.Name
@@ -181,12 +183,12 @@ func (h *BranchingHandler) Delete(c *gin.Context) {
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		_, err = h.DB.Exec(`
 			DELETE FROM db_connections 
-			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND (name = $3 OR name LIKE '%_branch_' || $3)
+			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND (name = $3 OR name = 'preview-branch_' || $3 OR name LIKE '%_branch_' || $3)
 		`, orgIDRaw, userID, branchName)
 	} else {
 		_, err = h.DB.Exec(`
 			DELETE FROM db_connections 
-			WHERE user_id = $1 AND (name = $2 OR name LIKE '%_branch_' || $3)
+			WHERE user_id = $1 AND (name = $2 OR name = 'preview-branch_' || $2 OR name LIKE '%_branch_' || $2)
 		`, userID, branchName)
 	}
 
