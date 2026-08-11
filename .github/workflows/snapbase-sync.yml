@@ -1,6 +1,7 @@
 name: SnapBase DB Branching & Sync CI/CD
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, closed]
 
