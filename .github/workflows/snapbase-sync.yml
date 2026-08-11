@@ -17,12 +17,16 @@ jobs:
         run: |
           PR_NUM="${{ github.event.pull_request.number }}"
           if [ -z "$PR_NUM" ]; then PR_NUM="manual-run"; fi
-          echo "Triggering SnapBase DB Branching for branch pr-${PR_NUM}..."
-          curl -X POST "${{ secrets.SNAPBASE_API_URL }}/api/branching/create" \
+          API_URL="${{ secrets.SNAPBASE_API_URL }}"
+          if [ -z "$API_URL" ]; then API_URL="https://api.getsnapbase.com"; fi
+          CONN_ID="${{ secrets.SNAPBASE_SOURCE_CONN_ID }}"
+          if [ -z "$CONN_ID" ]; then CONN_ID="1"; fi
+          echo "Triggering SnapBase DB Branching for branch pr-${PR_NUM} at ${API_URL}..."
+          curl -X POST "${API_URL}/api/branching/create" \
             -H "Authorization: Bearer ${{ secrets.SNAPBASE_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{
-              \"connection_id\": ${{ secrets.SNAPBASE_SOURCE_CONN_ID || 1 }},
+              \"connection_id\": ${CONN_ID},
               \"branch_name\": \"pr-${PR_NUM}\"
             }"
 
