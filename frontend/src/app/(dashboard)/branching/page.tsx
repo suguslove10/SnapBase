@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { GitBranch, Plus, Trash2, RefreshCw, Layers, ShieldCheck, Terminal } from "lucide-react";
+import { GitBranch, Plus, Trash2, RefreshCw, Layers, ShieldCheck, Terminal, Copy, Check } from "lucide-react";
 import api from "@/lib/api";
 
 interface DBConnection {
@@ -31,6 +31,7 @@ export default function BranchingPage() {
   const [branchNameInput, setBranchNameInput] = useState("");
   const [provisioning, setProvisioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -47,6 +48,13 @@ export default function BranchingPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyUrl = (id: number, url?: string) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   useEffect(() => {
@@ -168,6 +176,7 @@ export default function BranchingPage() {
                 <tr>
                   <th className="px-6 py-3.5">Branch Name</th>
                   <th className="px-6 py-3.5">Engine</th>
+                  <th className="px-6 py-3.5">Connection URL</th>
                   <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5">Created</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
@@ -181,6 +190,28 @@ export default function BranchingPage() {
                       {b.branch_name || b.name}
                     </td>
                     <td className="px-6 py-4 text-xs font-mono uppercase text-slate-400">{b.type}</td>
+                    <td className="px-6 py-4 font-mono text-xs text-slate-300">
+                      {b.database_url ? (
+                        <div className="flex items-center gap-2">
+                          <span className="truncate max-w-[220px] rounded bg-white/5 px-2 py-1 text-[#00b4ff] font-jetbrains">
+                            {b.database_url}
+                          </span>
+                          <button
+                            onClick={() => handleCopyUrl(b.id, b.database_url)}
+                            className="p-1 text-slate-400 hover:text-white transition rounded hover:bg-white/10"
+                            title={copiedId === b.id ? "Copied!" : "Copy Connection String"}
+                          >
+                            {copiedId === b.id ? (
+                              <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 italic text-xs">Not available</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20">
                         <ShieldCheck className="h-3 w-3" />

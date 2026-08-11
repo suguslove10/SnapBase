@@ -120,6 +120,7 @@ func (h *BranchingHandler) List(c *gin.Context) {
 		BranchName   string    `json:"branch_name"`
 		Status       string    `json:"status"`
 		CreatedAt    time.Time `json:"created_at"`
+		DatabaseURL  string    `json:"database_url"`
 	}
 
 	var branches []BranchItem
@@ -128,14 +129,14 @@ func (h *BranchingHandler) List(c *gin.Context) {
 
 	if orgIDRaw, hasOrg := c.Get("org_id"); hasOrg {
 		rows, err = h.DB.Query(`
-			SELECT id, user_id, name, type, created_at
+			SELECT id, user_id, name, type, COALESCE(host, ''), COALESCE(port, 5432), COALESCE(database_name, ''), created_at
 			FROM db_connections 
 			WHERE (org_id = $1 OR (org_id IS NULL AND user_id = $2)) AND (auth_source = 'preview_branch' OR name LIKE 'preview-branch_%')
 			ORDER BY created_at DESC
 		`, orgIDRaw, userID)
 	} else {
 		rows, err = h.DB.Query(`
-			SELECT id, user_id, name, type, created_at
+			SELECT id, user_id, name, type, COALESCE(host, ''), COALESCE(port, 5432), COALESCE(database_name, ''), created_at
 			FROM db_connections 
 			WHERE user_id = $1 AND (auth_source = 'preview_branch' OR name LIKE 'preview-branch_%')
 			ORDER BY created_at DESC
@@ -146,8 +147,9 @@ func (h *BranchingHandler) List(c *gin.Context) {
 		defer rows.Close()
 		for rows.Next() {
 			var item BranchItem
-			var rowUserID int
-			if scanErr := rows.Scan(&item.ID, &rowUserID, &item.Name, &item.Type, &item.CreatedAt); scanErr != nil {
+			var rowUserID, port int
+			var host, databaseName string
+			if scanErr := rows.Scan(&item.ID, &rowUserID, &item.Name, &item.Type, &host, &port, &databaseName, &item.CreatedAt); scanErr != nil {
 				continue
 			}
 			if strings.HasPrefix(item.Name, "preview-branch_") {
@@ -156,6 +158,9 @@ func (h *BranchingHandler) List(c *gin.Context) {
 				item.BranchName = item.Name[idx+len("_branch_"):]
 			} else {
 				item.BranchName = item.Name
+			}
+			if host != "" && databaseName != "" {
+				item.DatabaseURL = fmt.Sprintf("%s://%s:%d/%s", item.Type, host, port, databaseName)
 			}
 			item.Status = "active"
 			branches = append(branches, item)
