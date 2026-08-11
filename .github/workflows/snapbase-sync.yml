@@ -13,16 +13,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Provision Ephemeral DB Branch on PR Open
-        if: github.event.action == 'opened' || github.event.action == 'synchronize'
+        if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event_name == 'workflow_dispatch'
         run: |
-          echo "Triggering SnapBase DB Branching for PR #${{ github.event.pull_request.number }}..."
+          PR_NUM="${{ github.event.pull_request.number }}"
+          if [ -z "$PR_NUM" ]; then PR_NUM="manual-run"; fi
+          echo "Triggering SnapBase DB Branching for branch pr-${PR_NUM}..."
           curl -X POST "${{ secrets.SNAPBASE_API_URL }}/api/branching/create" \
             -H "Authorization: Bearer ${{ secrets.SNAPBASE_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "connection_id": ${{ secrets.SNAPBASE_SOURCE_CONN_ID }},
-              "branch_name": "pr-${{ github.event.pull_request.number }}"
-            }'
+            -d "{
+              \"connection_id\": ${{ secrets.SNAPBASE_SOURCE_CONN_ID || 1 }},
+              \"branch_name\": \"pr-${PR_NUM}\"
+            }"
 
       - name: Teardown DB Branch on PR Close
         if: github.event.action == 'closed'
@@ -30,3 +32,4 @@ jobs:
           echo "Tearing down SnapBase DB Branch for PR #${{ github.event.pull_request.number }}..."
           curl -X DELETE "${{ secrets.SNAPBASE_API_URL }}/api/branching/pr-${{ github.event.pull_request.number }}" \
             -H "Authorization: Bearer ${{ secrets.SNAPBASE_API_TOKEN }}"
+
